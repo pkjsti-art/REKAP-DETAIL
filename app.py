@@ -24,8 +24,20 @@ def clean_single_file(file):
     
     # 5. Forward fill kolom tertentu
     kolom_ffill = ['Gudang', 'Kode Barang Jadi', 'Nama Barang Jadi']
-    df[kolom_ffill] = df[kolom_ffill].ffill()
+    for col in kolom_ffill:
+        if col in df.columns:
+            df[col] = df[col].ffill()
     
+    # 6. Perbaikan Format Angka (dari teks ke numerik)
+    kolom_angka = ['Target Qty', 'Qty', 'Total', 'Total Harga'] 
+    for col in kolom_angka:
+        if col in df.columns:
+            # Hanya proses konversi jika data terbaca sebagai teks (object/string)
+            if df[col].dtype == 'object':
+                df[col] = df[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
+            # Pastikan menjadi format angka matematis murni
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            
     return df
 
 def generate_excel_report(df_gabungan):
@@ -48,7 +60,7 @@ def generate_excel_report(df_gabungan):
         else:
             sheet_name = nama_bj_str.strip()
             
-        # Bersihkan karakter yang dilarang Excel untuk nama Sheet (menghindari error invalid character)
+        # Bersihkan karakter yang dilarang Excel untuk nama Sheet
         sheet_name = re.sub(r'[\\/*?:\[\]]', '_', sheet_name)
         
         # Potong maksimal 31 karakter sesuai batas maksimal Excel
@@ -82,6 +94,9 @@ def generate_excel_report(df_gabungan):
         current_row = 2
         sub_grouped = group_data.groupby('Kode Barang Jadi')
         
+        # Cari nama kolom yang tepat untuk Total Harga (berjaga-jaga jika namanya 'Total' atau 'Total Harga')
+        kolom_total = 'Total Harga' if 'Total Harga' in group_data.columns else 'Total'
+        
         for kode_bj, sub_df in sub_grouped:
             nama_bj_val = sub_df['Nama Barang Jadi'].iloc[0]
             target_qty_sum = sub_df['Target Qty'].sum()
@@ -89,7 +104,7 @@ def generate_excel_report(df_gabungan):
             
             item_grouped = sub_df.groupby(['Kode Item', 'Nama Item', 'Unit']).agg({
                 'Qty': 'sum',
-                'Total': 'sum' 
+                kolom_total: 'sum' 
             }).reset_index()
             
             jumlah_item = len(item_grouped)
@@ -107,7 +122,7 @@ def generate_excel_report(df_gabungan):
                 ws.cell(row=current_row, column=start_col_rekap + 5, value=item_row['Nama Item'])
                 ws.cell(row=current_row, column=start_col_rekap + 6, value=item_row['Unit'])
                 ws.cell(row=current_row, column=start_col_rekap + 7, value=item_row['Qty'])
-                ws.cell(row=current_row, column=start_col_rekap + 8, value=item_row['Total'])
+                ws.cell(row=current_row, column=start_col_rekap + 8, value=item_row[kolom_total])
                 
                 current_row += 1
                 
