@@ -9,7 +9,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 # ==========================================
 # UI/UX: INJEKSI TEMA DARK CYBER / FUTURISTIC
 # ==========================================
-st.set_page_config(page_title="Data Control Dashboard", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Sistem Rekap Detail Laporan Bulanan", layout="wide", initial_sidebar_state="collapsed")
 
 custom_css = """
 <style>
@@ -415,13 +415,13 @@ def generate_excel_report(df_gabungan, df_indikator):
 # ==========================================
 # UI STREAMLIT: KOLOM UPLOAD
 # ==========================================
-st.markdown("<p style='text-align: center; color: #b2ebf2; margin-bottom: 30px;'>⚙️ AL CONTROL HUB • DATA SYNCHRONIZATION ACTIVE</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #b2ebf2; margin-bottom: 30px;'>⚙️ SISTEM PENGELOLAAN DETAIL PRODUK DATA HASIL PRODUKSI </p>", unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 with col1:
-    uploaded_files = st.file_uploader("📂 MAIN DATA FEED (.xlsx)", type=['xlsx'], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("📂 MASTER DATA HASIL PRODUKSI (.xlsx)", type=['xlsx'], accept_multiple_files=True)
 with col2:
-    indicator_file = st.file_uploader("🎯 KEYWORD INDICATOR FEED (Optional)", type=['xlsx'])
+    indicator_file = st.file_uploader("🎯 INDIKATOR PENGELOMPOKKAN 500 & 5000 (Optional)", type=['xlsx'])
 
 if uploaded_files:
     st.info(f"🔄 SYSTEM SYNC: {len(uploaded_files)} DATA FILES DETECTED. INITIATING NEURAL PROCESSING...")
