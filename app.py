@@ -48,9 +48,10 @@ def clean_single_file(file):
     return df
 
 def get_sheet_group_and_merk(r, df_ind):
-    """Fungsi Pengecekan Keyword Indikator & Penamaan Merk Khusus 500 & 5000 MRT"""
+    """Fungsi Pengecekan Keyword Indikator, Target Unit & Penamaan Merk Khusus 500 & 5000 MRT"""
     gudang = str(r.get('Gudang', '')).upper()
     nama_bj = str(r.get('Nama Barang Jadi', ''))
+    target_unit_raw = str(r.get('Target Unit', '')).upper().strip()
     
     if ("500" in gudang or "5000" in gudang) and df_ind is not None and not df_ind.empty:
         df_filter = df_ind[df_ind.iloc[:, 0].astype(str).str.upper() == gudang]
@@ -61,21 +62,25 @@ def get_sheet_group_and_merk(r, df_ind):
         
         cols = df_ind.columns
         col_ind = next((c for c in cols if 'NAMA BARANG JADI' in c.upper() or 'INDIKATOR' in c.upper()), cols[1] if len(cols) > 1 else None)
-        col_sheet = next((c for c in cols if 'SHEET' in c.upper()), cols[2] if len(cols) > 2 else None)
-        col_merk = next((c for c in cols if 'MEREK' in c.upper() or 'MERK' in c.upper()), cols[3] if len(cols) > 3 else None)
+        col_target_unit = next((c for c in cols if 'TARGET UNIT' in c.upper()), cols[2] if len(cols) > 2 else None)
+        col_sheet = next((c for c in cols if 'SHEET' in c.upper()), cols[3] if len(cols) > 3 else None)
+        col_merk = next((c for c in cols if 'MEREK' in c.upper() or 'MERK' in c.upper()), cols[4] if len(cols) > 4 else None)
         
         for _, ind_row in df_filter.iterrows():
             if col_ind is not None:
+                # Validasi Lapisan 1: Pengecekan Target Unit jika kolomnya tersedia di file indikator
+                if col_target_unit is not None:
+                    ind_tu = str(ind_row[col_target_unit]).upper().strip()
+                    if target_unit_raw != ind_tu:
+                        continue # Lewati baris indikator ini jika Target Unit tidak sama
+                
+                # Validasi Lapisan 2: Pengecekan Keyword (Word Boundary & Titik Angka)
                 keyword_raw = str(ind_row[col_ind]).upper()
                 keyword_clean = re.sub(r'(?<=\d)\.(?=\d)', '', keyword_raw)
                 keywords = keyword_clean.split()
                 
-                # REVISI PENTING: Pengecekan Kata Utuh (Word Boundary)
-                # re.search akan mencari apakah keyword tersebut adalah kata utuh di dalam teks
                 match_all = True
                 for kw in keywords:
-                    # Menangani karakter spesial (seperti B.) dengan \b kustom
-                    # Pattern memastikan sebelum & sesudah kata bukan huruf/angka
                     pattern = r'(?<![A-Z0-9])' + re.escape(kw) + r'(?![A-Z0-9])'
                     if not re.search(pattern, nama_bj_compare):
                         match_all = False
@@ -362,7 +367,7 @@ if uploaded_files:
         
         processed_excel = generate_excel_report(df_gabungan, df_indikator)
         
-        st.success("Semua logika, merging, hyperlink, perlindungan titik angka, dan word boundary sempurna berhasil dieksekusi!")
+        st.success("Semua logika, merging, hyperlink, dan validasi Target Unit berhasil dieksekusi!")
         
         st.download_button(
             label="📥 Download Laporan Akhir (Excel)",
