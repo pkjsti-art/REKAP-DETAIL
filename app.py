@@ -9,9 +9,8 @@ from openpyxl.styles import Alignment, Font, PatternFill
 # ==========================================
 # UI/UX: INJEKSI TEMA DARK CYBER / FUTURISTIC
 # ==========================================
-st.set_page_config(page_title="Data Control Dashboard", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Sistem Rekap Detail", layout="wide", initial_sidebar_state="collapsed")
 
-# Tanda kutip tiga (triple quotes) di bawah ini digunakan untuk membungkus kode CSS
 custom_css = """
 <style>
     /* Latar Belakang Utama Aplikasi (Deep Dark Navy/Black) */
@@ -92,9 +91,8 @@ custom_css = """
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# Judul Dashboard Cyberpunk
-st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ DATA CONTROL DASHBOARD</h1>", unsafe_allow_html=True)
-
+# Judul Dashboard
+st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN</h1>", unsafe_allow_html=True)
 
 # ==========================================
 # FUNGSI BACKEND (LOGIKA DATA UTUH)
@@ -126,7 +124,6 @@ def clean_single_file(file):
     df = df.iloc[:-4]
     df = df.dropna(how='all')
     
-    # FORWARD FILL DINAMIS: Semua kolom di sebelah kiri 'Kode Item' otomatis diisi
     if 'Kode Item' in df.columns:
         idx = df.columns.get_loc('Kode Item')
         if isinstance(idx, int):
@@ -432,16 +429,16 @@ def generate_excel_report(df_gabungan, df_indikator):
 # ==========================================
 # UI STREAMLIT: KOLOM UPLOAD
 # ==========================================
-st.markdown("<p style='text-align: center; color: #b2ebf2; margin-bottom: 30px;'>⚙️ AL CONTROL HUB • DATA SYNCHRONIZATION ACTIVE</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #b2ebf2; margin-bottom: 30px;'>⚙️ SISTEM PENGELOLAAN DETAIL PRODUK DATA HASIL PRODUKSI</p>", unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 with col1:
-    uploaded_files = st.file_uploader("📂 MAIN DATA FEED (.xlsx)", type=['xlsx'], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("📂 MASTER DATA HASIL PRODUKSI (.xlsx)", type=['xlsx'], accept_multiple_files=True)
 with col2:
-    indicator_file = st.file_uploader("🎯 KEYWORD INDICATOR FEED (Optional)", type=['xlsx'])
+    indicator_file = st.file_uploader("🎯 INDIKATOR PENGELOMPOKKAN 500 & 5000 (Opsional)", type=['xlsx'])
 
 if uploaded_files:
-    st.info(f"🔄 SYSTEM SYNC: {len(uploaded_files)} DATA FILES DETECTED. INITIATING NEURAL PROCESSING...")
+    st.info(f"🔄 Memproses {len(uploaded_files)} file data... Mohon tunggu sebentar.")
     
     try:
         df_indikator = None
@@ -463,13 +460,13 @@ if uploaded_files:
         
         processed_excel = generate_excel_report(df_gabungan, df_indikator)
         
-        st.success("✅ PROTOCOL EXECUTED: DATA NORMALIZATION, MERGING, AND HYPER-LINKING SUCCESSFUL.")
+        st.success("✅ Proses selesai! Data berhasil dinormalisasi, digabungkan, dan siap diunduh.")
         
         st.download_button(
-            label="EXECUTE DOWNLOAD PROTOCOL ⬇",
+            label="⬇️ UNDUH LAPORAN HASIL REKAP",
             data=processed_excel,
-            file_name="Nexus_Data_Control_Final.xlsx",
+            file_name="Laporan_Rekap_Detail_Bulanan.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     except Exception as e:
-        st.error(f"❌ SYSTEM ALERT: FATAL ERROR IN SECTOR - {e}")
+        st.error(f"❌ Terjadi kesalahan saat memproses data: {e}")
