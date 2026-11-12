@@ -119,10 +119,19 @@ def parse_number(val):
     except ValueError:
         return 0.0
 
-def clean_single_file(file):
+def clean_single_file(file, file_idx):
     df = pd.read_excel(file, skiprows=4)
     df = df.iloc[:-4]
     df = df.dropna(how='all')
+    
+    # REVISI PENTING: Penandaan Tx_ID (Transaction ID) sebelum di Forward Fill
+    ind_col = 'Kode Barang Jadi' if 'Kode Barang Jadi' in df.columns else ('Gudang' if 'Gudang' in df.columns else None)
+    if ind_col:
+        is_parent = df[ind_col].notna() & (df[ind_col].astype(str).str.strip() != '') & (df[ind_col].astype(str).str.lower() != 'nan')
+        # Format Tx_ID dibuat unik per file (misal: "0_1", "0_2", "1_1") agar aman digabung
+        df['Tx_ID'] = str(file_idx) + "_" + is_parent.cumsum().astype(str)
+    else:
+        df['Tx_ID'] = f"{file_idx}_1"
     
     if 'Kode Item' in df.columns:
         idx = df.columns.get_loc('Kode Item')
@@ -247,7 +256,7 @@ def generate_excel_report(df_gabungan, df_indikator):
         is_500_5000 = "500" in g_upper or "5000" in g_upper
         is_dyeing_lab = "DYEING" in g_upper or "LAB" in g_upper or "RND" in g_upper
 
-        cols_to_drop = ['Sheet_Group', 'Merk_Group']
+        cols_to_drop = ['Sheet_Group', 'Merk_Group', 'Tx_ID']
         if not is_dyeing_lab:
             cols_to_drop.extend(['Qty Target Standar (GR)', 'Qty BB Standar (GR)'])
 
@@ -329,15 +338,16 @@ def generate_excel_report(df_gabungan, df_indikator):
                 nama_bj_val = sub_df['Nama Barang Jadi'].iloc[0]
                 target_unit_val = sub_df['Target Unit'].iloc[0] if 'Target Unit' in sub_df.columns else ""
                 
+                # REVISI PENJUMLAHAN AKURAT: Dijumlahkan per transaksi (Tx_ID) agar tak terlipatgandakan
                 if is_dyeing_lab:
-                    target_qty_val = sub_df['Qty Target Standar (GR)'].iloc[0]
+                    target_qty_val = sub_df.drop_duplicates(subset=['Tx_ID'])['Qty Target Standar (GR)'].sum()
                     item_grouped = sub_df.groupby(['Kode Item', 'Nama Item', 'Unit'], dropna=False).agg({
                         'Qty BB Standar (GR)': 'sum',
                         kolom_total: 'sum'
                     }).reset_index()
                     item_grouped.rename(columns={'Qty BB Standar (GR)': 'Qty'}, inplace=True)
                 else:
-                    target_qty_val = sub_df['Target Qty'].iloc[0]
+                    target_qty_val = sub_df.drop_duplicates(subset=['Tx_ID'])['Target Qty'].sum()
                     item_grouped = sub_df.groupby(['Kode Item', 'Nama Item', 'Unit'], dropna=False).agg({
                         'Qty': 'sum',
                         kolom_total: 'sum'
@@ -367,13 +377,14 @@ def generate_excel_report(df_gabungan, df_indikator):
 
             target_u = group_data['Target Unit'].iloc[0] if not group_data.empty and 'Target Unit' in group_data.columns else ""
             
+            # REVISI SUMMARY PADA LOGIKA SUMMING
             if is_dyeing_lab:
-                t_qty_sum = group_data.groupby('Kode Barang Jadi', dropna=False)['Qty Target Standar (GR)'].first().sum()
+                t_qty_sum = group_data.drop_duplicates(subset=['Tx_ID'])['Qty Target Standar (GR)'].sum()
                 q_gram_sum = t_qty_sum
                 satuan_target = "GR"
                 satuan = "GR"
             else:
-                t_qty_sum = group_data.groupby('Kode Barang Jadi', dropna=False)['Target Qty'].first().sum()
+                t_qty_sum = group_data.drop_duplicates(subset=['Tx_ID'])['Target Qty'].sum()
                 q_gram_sum = t_qty_sum
                 satuan_target = target_u
                 satuan = target_u
@@ -448,8 +459,8 @@ if uploaded_files:
         list_df_bersih = []
         all_cols_ordered = []
         
-        for file in uploaded_files:
-            df_bersih = clean_single_file(file)
+        for idx_file, file in enumerate(uploaded_files):
+            df_bersih = clean_single_file(file, idx_file)
             list_df_bersih.append(df_bersih)
             for c in df_bersih.columns:
                 if c not in all_cols_ordered:
