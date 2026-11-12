@@ -6,58 +6,143 @@ from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Alignment, Font, PatternFill
 
+# ==========================================
+# UI/UX: INJEKSI TEMA DARK CYBER / FUTURISTIC
+# ==========================================
+st.set_page_config(page_title="Data Control Dashboard", layout="wide", initial_sidebar_state="collapsed")
+
+custom_css = """
+<style>
+    /* Latar Belakang Utama Aplikasi (Deep Dark Navy/Black) */
+    .stApp {
+        background-color: #040814 !important;
+        background-image: radial-gradient(circle at 50% 0%, #0a1931 0%, #040814 70%);
+        color: #e0f7fa !important;
+        font-family: 'Courier New', Courier, monospace;
+    }
+
+    /* Styling Judul dan Header */
+    h1, h2, h3, h4, h5, h6 {
+        color: #00f3ff !important;
+        text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+        font-family: 'Trebuchet MS', sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+    }
+
+    /* Styling Kolom Upload File (Glowing Dashed Border) */
+    div[data-testid="stFileUploadDropzone"] {
+        background-color: rgba(4, 12, 32, 0.7) !important;
+        border: 2px dashed #00f3ff !important;
+        box-shadow: 0 0 15px rgba(0, 243, 255, 0.2);
+        border-radius: 10px;
+        transition: all 0.3s ease;
+    }
+    div[data-testid="stFileUploadDropzone"]:hover {
+        border-color: #00ffff !important;
+        box-shadow: 0 0 25px rgba(0, 255, 255, 0.6);
+        background-color: rgba(0, 243, 255, 0.05) !important;
+    }
+
+    /* Warna Teks pada Uploader */
+    .st-emotion-cache-1gblk4, .st-emotion-cache-1wivap2, .st-emotion-cache-1jspxgj {
+        color: #00f3ff !important;
+    }
+
+    /* Tombol Utama (Hollow Neon Style) */
+    div[data-testid="stButton"] > button {
+        background-color: transparent !important;
+        color: #00f3ff !important;
+        border: 1px solid #00f3ff !important;
+        box-shadow: 0 0 8px rgba(0, 243, 255, 0.4), inset 0 0 5px rgba(0, 243, 255, 0.2);
+        border-radius: 4px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        transition: all 0.3s ease;
+        padding: 0.5rem 1rem;
+    }
+    div[data-testid="stButton"] > button:hover {
+        background-color: #00f3ff !important;
+        color: #040814 !important;
+        box-shadow: 0 0 20px rgba(0, 243, 255, 0.8);
+    }
+
+    /* Notifikasi Info / Success (Panel Transparan) */
+    div[data-testid="stAlert"] {
+        background-color: rgba(0, 243, 255, 0.05) !important;
+        border: 1px solid #00f3ff !important;
+        border-left: 5px solid #00f3ff !important;
+        color: #e0f7fa !important;
+        box-shadow: 0 0 10px rgba(0, 243, 255, 0.1);
+    }
+    
+    /* Ikon dan Markdown Text */
+    .stMarkdown p {
+        color: #b2ebf2;
+    }
+    
+    /* Label Input */
+    label {
+        color: #00f3ff !important;
+        font-weight: 600 !important;
+    }
+</style>
+"""
+st.markdown(custom_css, unsafe_allow_html=True)
+
+# Judul Dashboard Cyberpunk
+st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ DATA CONTROL DASHBOARD</h1>", unsafe_allow_html=True)
+
+# ==========================================
+# FUNGSI BACKEND (LOGIKA DATA UTUH)
+# ==========================================
 def parse_number(val):
-    """Fungsi mengubah string format Indonesia menjadi angka murni (Float)"""
-    if pd.isna(val):
-        return 0.0
-    if isinstance(val, (int, float)):
-        return float(val)
-    
+    if pd.isna(val): return 0.0
+    if isinstance(val, (int, float)): return float(val)
     s = str(val).strip()
-    if not s or s == '-':
-        return 0.0
-    
+    if not s or s == '-': return 0.0
     s = re.sub(r'[^\d.,-]', '', s)
     if ',' in s:
         s = s.replace('.', '').replace(',', '.')
     else:
         if s.count('.') > 1 or re.search(r'\.\d{3}$', s):
             s = s.replace('.', '')
-            
     try:
         return float(s)
     except ValueError:
         return 0.0
 
 def clean_single_file(file):
-    """Fungsi membersihkan 1 file mentah (Tahap 1 - Forward Fill DULU, baru filter)"""
     df = pd.read_excel(file, skiprows=4)
     df = df.iloc[:-4]
     df = df.dropna(how='all')
     
-    kolom_ffill = ['Gudang', 'Kode Barang Jadi', 'Nama Barang Jadi', 'Target Qty', 'Target Unit']
-    for col in kolom_ffill:
-        if col in df.columns:
-            df[col] = df[col].ffill()
+    if 'Kode Item' in df.columns:
+        idx = df.columns.get_loc('Kode Item')
+        if isinstance(idx, int):
+            kolom_ffill_dinamis = df.columns[:idx]
+            df[kolom_ffill_dinamis] = df[kolom_ffill_dinamis].ffill()
+    else:
+        kolom_ffill = ['Gudang', 'Kode Barang Jadi', 'Nama Barang Jadi', 'Target Qty', 'Target Unit']
+        cols_to_fill = [c for c in kolom_ffill if c in df.columns]
+        if cols_to_fill:
+            df[cols_to_fill] = df[cols_to_fill].ffill()
     
-    kolom_angka = ['Target Qty', 'Qty', 'Total', 'Total Harga', 'Harga', 'Berat Netto'] 
+    kolom_angka = ['Target Qty', 'Qty', 'Total', 'Total Harga', 'Harga', 'Berat Netto', 'Berat Netto (Gram)'] 
     for col in kolom_angka:
         if col in df.columns:
             df[col] = df[col].apply(parse_number)
-            
     return df
 
 def get_sheet_group_and_merk(r, df_ind):
-    """Fungsi Pengecekan Keyword Indikator, Target Unit & Penamaan Merk Khusus 500 & 5000 MRT"""
     gudang = str(r.get('Gudang', '')).upper()
     nama_bj = str(r.get('Nama Barang Jadi', ''))
     target_unit_raw = str(r.get('Target Unit', '')).upper().strip()
     
     if ("500" in gudang or "5000" in gudang) and df_ind is not None and not df_ind.empty:
         df_filter = df_ind[df_ind.iloc[:, 0].astype(str).str.upper() == gudang]
-        
         nama_bj_upper = nama_bj.upper()
-        # Melindungi titik angka, spasi dipertahankan untuk regex boundary
         nama_bj_compare = re.sub(r'(?<=\d)\.(?=\d)', '', nama_bj_upper)
         
         cols = df_ind.columns
@@ -68,13 +153,10 @@ def get_sheet_group_and_merk(r, df_ind):
         
         for _, ind_row in df_filter.iterrows():
             if col_ind is not None:
-                # Validasi Lapisan 1: Pengecekan Target Unit jika kolomnya tersedia di file indikator
                 if col_target_unit is not None:
                     ind_tu = str(ind_row[col_target_unit]).upper().strip()
-                    if target_unit_raw != ind_tu:
-                        continue # Lewati baris indikator ini jika Target Unit tidak sama
+                    if target_unit_raw != ind_tu: continue 
                 
-                # Validasi Lapisan 2: Pengecekan Keyword (Word Boundary & Titik Angka)
                 keyword_raw = str(ind_row[col_ind]).upper()
                 keyword_clean = re.sub(r'(?<=\d)\.(?=\d)', '', keyword_raw)
                 keywords = keyword_clean.split()
@@ -90,18 +172,13 @@ def get_sheet_group_and_merk(r, df_ind):
                     nama_sheet = str(ind_row[col_sheet]) if col_sheet else nama_bj
                     merk_val = str(ind_row[col_merk]) if col_merk else nama_sheet
                     return nama_sheet, merk_val
-                
     return nama_bj, nama_bj
 
 def generate_excel_report(df_gabungan, df_indikator):
-    """Fungsi Utama Pembentukan Semua Aturan Logika Excel"""
     output = io.BytesIO()
     wb = Workbook()
     wb.remove(wb.active)
 
-    # ==========================================
-    # 1. FILTERING DATA BERDASARKAN ATURAN GUDANG
-    # ==========================================
     df_gabungan['Kode Item'] = df_gabungan['Kode Item'].astype(str)
     masks = []
     
@@ -118,22 +195,20 @@ def generate_excel_report(df_gabungan, df_indikator):
             
     df_filtered = pd.concat(masks, ignore_index=True) if masks else pd.DataFrame(columns=df_gabungan.columns)
 
-    # PEMETAAN GRUP SHEET & MERK
     res = df_filtered.apply(lambda r: get_sheet_group_and_merk(r, df_indikator), axis=1)
     df_filtered['Sheet_Group'] = [x[0] for x in res]
     df_filtered['Merk_Group'] = [x[1] for x in res]
 
-    # ==========================================
-    # 2. PENAMBAHAN KOLOM STANDAR (GR) & KONVERSI
-    # ==========================================
     if 'Target Unit' in df_filtered.columns and 'Target Qty' in df_filtered.columns:
-        idx = df_filtered.columns.get_loc('Target Unit') + 1
+        loc = df_filtered.columns.get_loc('Target Unit')
+        idx = loc + 1 if isinstance(loc, int) else len(df_filtered.columns)
         df_filtered.insert(idx, 'Qty Target Standar (GR)', df_filtered['Target Qty'])
     else:
         df_filtered['Qty Target Standar (GR)'] = df_filtered.get('Target Qty', 0)
         
     if 'Qty' in df_filtered.columns and 'Unit' in df_filtered.columns:
-        idx = df_filtered.columns.get_loc('Qty') + 1
+        loc = df_filtered.columns.get_loc('Qty')
+        idx = loc + 1 if isinstance(loc, int) else len(df_filtered.columns)
         df_filtered.insert(idx, 'Qty BB Standar (GR)', df_filtered['Qty'])
     else:
         df_filtered['Qty BB Standar (GR)'] = df_filtered.get('Qty', 0)
@@ -146,12 +221,12 @@ def generate_excel_report(df_gabungan, df_indikator):
     df_filtered.loc[mask_dyeing_lab & mask_kg_unit, 'Qty BB Standar (GR)'] = df_filtered['Qty'] * 1000
 
     ws_summary = wb.create_sheet(title="Summary", index=0)
+    master_idx = 1
+    
     summary_dict = {}
+    master_names_dict = {}
     kolom_total = 'Total Harga' if 'Total Harga' in df_filtered.columns else 'Total'
 
-    # ==========================================
-    # 3. LOOPING PER GUDANG
-    # ==========================================
     for gudang, gudang_df in df_filtered.groupby('Gudang', dropna=False):
         gudang_name = str(gudang)
         g_upper = gudang_name.upper()
@@ -163,9 +238,10 @@ def generate_excel_report(df_gabungan, df_indikator):
         if not is_dyeing_lab:
             cols_to_drop.extend(['Qty Target Standar (GR)', 'Qty BB Standar (GR)'])
 
-        # --- A. BUAT SHEET MASTER ---
         master_sheet_name = re.sub(r'[\\/*?:\[\]]', '_', f"Master - {gudang_name}")[:31]
-        ws_master = wb.create_sheet(title=master_sheet_name)
+        ws_master = wb.create_sheet(title=master_sheet_name, index=master_idx)
+        master_names_dict[gudang_name] = master_sheet_name 
+        master_idx += 1
         
         btn = ws_master.cell(row=1, column=1, value="⬅️ KEMBALI KE SUMMARY")
         btn.hyperlink = "#'Summary'!A1"
@@ -182,7 +258,6 @@ def generate_excel_report(df_gabungan, df_indikator):
                 
         summary_dict[gudang_name] = []
         
-        # --- B. BUAT SHEET PEMECAHAN PER ITEM ---
         grouped = gudang_df.groupby('Sheet_Group', dropna=False)
             
         for keys, group_data in grouped:
@@ -222,7 +297,6 @@ def generate_excel_report(df_gabungan, df_indikator):
             for cell in ws[3]:
                 cell.font = Font(bold=True)
                 
-            # --- C. TABEL REKAP DETAIL ---
             max_col_master = ws.max_column
             start_col_rekap = max_col_master + 3
             
@@ -278,7 +352,6 @@ def generate_excel_report(df_gabungan, df_indikator):
                                        end_row=end_merge_row, end_column=start_col_rekap + col_offset)
                         ws.cell(row=start_merge_row, column=start_col_rekap + col_offset).alignment = Alignment(vertical='center', horizontal='center')
 
-            # --- D. TAMPUNG DATA SUMMARY ---
             target_u = group_data['Target Unit'].iloc[0] if not group_data.empty and 'Target Unit' in group_data.columns else ""
             
             if is_dyeing_lab:
@@ -306,14 +379,15 @@ def generate_excel_report(df_gabungan, df_indikator):
                 'Sheet_Link': final_sheet_name 
             })
             
-    # ==========================================
-    # 4. PENULISAN SHEET SUMMARY MENYAMPING
-    # ==========================================
     summary_headers = ['DIVISI', 'MERK', 'SATUAN TARGET', 'QTY TARGET', 'SATUAN', 'QTY GRAM']
     current_start_col = 1
     
     for gudang, rows in summary_dict.items():
-        ws_summary.cell(row=1, column=current_start_col, value=f"REKAP - {gudang}").font = Font(bold=True)
+        cell_title = ws_summary.cell(row=1, column=current_start_col, value=f"REKAP - {gudang}")
+        master_link = master_names_dict.get(gudang, "")
+        if master_link:
+            cell_title.hyperlink = f"#'{master_link}'!A1"
+        cell_title.font = Font(bold=True, color="0563C1", underline="single")
         
         for i, h in enumerate(summary_headers):
             c = ws_summary.cell(row=2, column=current_start_col + i, value=h)
@@ -339,19 +413,18 @@ def generate_excel_report(df_gabungan, df_indikator):
 
 
 # ==========================================
-# UI STREAMLIT
+# UI STREAMLIT: KOLOM UPLOAD
 # ==========================================
-st.set_page_config(page_title="Pengelolaan Data Laporan", layout="wide")
-st.title("Aplikasi Pengelolaan Data Laporan")
+st.markdown("<p style='text-align: center; color: #b2ebf2; margin-bottom: 30px;'>⚙️ AL CONTROL HUB • DATA SYNCHRONIZATION ACTIVE</p>", unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 with col1:
-    uploaded_files = st.file_uploader("1. Upload File Data Mentah (.xlsx)", type=['xlsx'], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("📂 MAIN DATA FEED (.xlsx)", type=['xlsx'], accept_multiple_files=True)
 with col2:
-    indicator_file = st.file_uploader("2. Upload File Indikator (Opsional)", type=['xlsx'])
+    indicator_file = st.file_uploader("🎯 KEYWORD INDICATOR FEED (Optional)", type=['xlsx'])
 
 if uploaded_files:
-    st.info(f"Memproses {len(uploaded_files)} file data mentah... Mohon tunggu.")
+    st.info(f"🔄 SYSTEM SYNC: {len(uploaded_files)} DATA FILES DETECTED. INITIATING NEURAL PROCESSING...")
     
     try:
         df_indikator = None
@@ -359,21 +432,27 @@ if uploaded_files:
             df_indikator = pd.read_excel(indicator_file)
             
         list_df_bersih = []
+        all_cols_ordered = []
+        
         for file in uploaded_files:
             df_bersih = clean_single_file(file)
             list_df_bersih.append(df_bersih)
+            for c in df_bersih.columns:
+                if c not in all_cols_ordered:
+                    all_cols_ordered.append(c)
             
         df_gabungan = pd.concat(list_df_bersih, ignore_index=True)
+        df_gabungan = df_gabungan.reindex(columns=all_cols_ordered) 
         
         processed_excel = generate_excel_report(df_gabungan, df_indikator)
         
-        st.success("Semua logika, merging, hyperlink, dan validasi Target Unit berhasil dieksekusi!")
+        st.success("✅ PROTOCOL EXECUTED: DATA NORMALIZATION, MERGING, AND HYPER-LINKING SUCCESSFUL.")
         
         st.download_button(
-            label="📥 Download Laporan Akhir (Excel)",
+            label="EXECUTE DOWNLOAD PROTOCOL ⬇",
             data=processed_excel,
-            file_name="Laporan_Otomatis_Final.xlsx",
+            file_name="Nexus_Data_Control_Final.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     except Exception as e:
-        st.error(f"Terjadi kesalahan teknis: {e}")
+        st.error(f"❌ SYSTEM ALERT: FATAL ERROR IN SECTOR - {e}")
