@@ -56,7 +56,7 @@ def clean_single_file(file):
         if col in df.columns:
             df[col] = df[col].ffill()
     
-    # 6. PERBAIKAN: Paksa konversi tipe data ke angka menggunakan fungsi parse_number
+    # 6. Paksa konversi tipe data ke angka menggunakan fungsi parse_number
     kolom_angka = ['Target Qty', 'Qty', 'Total', 'Total Harga', 'Harga', 'Berat Netto'] 
     for col in kolom_angka:
         if col in df.columns:
@@ -175,19 +175,31 @@ def generate_excel_report(df_gabungan):
     # ==========================================
     # PEMBUATAN SHEET SUMMARY
     # ==========================================
-    ws_summary = wb.create_sheet(title="Summary", index=0)
+    ws_summary = wb.create_sheet(title="Summary", index=0) # Posisi paling depan
     df_summary = pd.DataFrame(summary_data)
     
-    # Tulis header Summary
     for c_idx, col_name in enumerate(df_summary.columns, 1):
         cell = ws_summary.cell(row=1, column=c_idx, value=col_name)
         cell.font = Font(bold=True)
         cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
         
-    # Tulis baris data Summary
     for r_idx, row in enumerate(dataframe_to_rows(df_summary, index=False, header=False), 2):
         for c_idx, value in enumerate(row, 1):
             ws_summary.cell(row=r_idx, column=c_idx, value=value)
+
+    # ==========================================
+    # PEMBUATAN SHEET MASTER DATA
+    # ==========================================
+    ws_master = wb.create_sheet(title="master data", index=1) # Posisi setelah Summary
+    
+    for c_idx, col_name in enumerate(df_gabungan.columns, 1):
+        cell = ws_master.cell(row=1, column=c_idx, value=col_name)
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid") # Warna hijau muda untuk master
+        
+    for r_idx, row in enumerate(dataframe_to_rows(df_gabungan, index=False, header=False), 2):
+        for c_idx, value in enumerate(row, 1):
+            ws_master.cell(row=r_idx, column=c_idx, value=value)
 
     wb.save(output)
     return output.getvalue()
