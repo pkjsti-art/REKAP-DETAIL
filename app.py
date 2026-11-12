@@ -7,7 +7,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Alignment, Font, PatternFill
 
 def parse_number(val):
-    """Fungsi tangguh mengubah string format Indonesia menjadi angka murni (Float)"""
+    """Fungsi mengubah string format Indonesia menjadi angka murni (Float)"""
     if pd.isna(val):
         return 0.0
     if isinstance(val, (int, float)):
@@ -30,12 +30,12 @@ def parse_number(val):
         return 0.0
 
 def clean_single_file(file):
-    """Fungsi membersihkan 1 file mentah (Tahap 1 - Standar)"""
+    """Fungsi membersihkan 1 file mentah (Tahap 1 - Forward Fill DULU, baru filter)"""
     df = pd.read_excel(file, skiprows=4)
     df = df.iloc[:-4]
     df = df.dropna(how='all')
     
-    kolom_ffill = ['Gudang', 'Kode Barang Jadi', 'Nama Barang Jadi']
+    kolom_ffill = ['Gudang', 'Kode Barang Jadi', 'Nama Barang Jadi', 'Target Qty', 'Target Unit']
     for col in kolom_ffill:
         if col in df.columns:
             df[col] = df[col].ffill()
@@ -52,23 +52,36 @@ def get_sheet_group_and_merk(r, df_ind):
     gudang = str(r.get('Gudang', '')).upper()
     nama_bj = str(r.get('Nama Barang Jadi', ''))
     
-    # Hanya jalan untuk 500 & 5000 jika indikator tersedia
     if ("500" in gudang or "5000" in gudang) and df_ind is not None and not df_ind.empty:
-        # Filter berdasarkan Gudang di kolom 0 indikator
         df_filter = df_ind[df_ind.iloc[:, 0].astype(str).str.upper() == gudang]
-        nama_bj_upper = nama_bj.upper()
         
-        # Deteksi nama kolom otomatis agar kebal dari typo atau perubahan spasi
+        nama_bj_upper = nama_bj.upper()
+        # Melindungi titik angka, spasi dipertahankan untuk regex boundary
+        nama_bj_compare = re.sub(r'(?<=\d)\.(?=\d)', '', nama_bj_upper)
+        
         cols = df_ind.columns
-        col_ind = next((c for c in cols if 'INDIKATOR' in c.upper()), next((c for c in cols if 'BARANG JADI' in c.upper()), cols[1] if len(cols) > 1 else None))
+        col_ind = next((c for c in cols if 'NAMA BARANG JADI' in c.upper() or 'INDIKATOR' in c.upper()), cols[1] if len(cols) > 1 else None)
         col_sheet = next((c for c in cols if 'SHEET' in c.upper()), cols[2] if len(cols) > 2 else None)
         col_merk = next((c for c in cols if 'MEREK' in c.upper() or 'MERK' in c.upper()), cols[3] if len(cols) > 3 else None)
         
         for _, ind_row in df_filter.iterrows():
             if col_ind is not None:
-                keywords = str(ind_row[col_ind]).upper().split()
-                # Jika SEMUA keyword penggalan kata ada di dalam Nama Barang Jadi asli
-                if all(kw in nama_bj_upper for kw in keywords):
+                keyword_raw = str(ind_row[col_ind]).upper()
+                keyword_clean = re.sub(r'(?<=\d)\.(?=\d)', '', keyword_raw)
+                keywords = keyword_clean.split()
+                
+                # REVISI PENTING: Pengecekan Kata Utuh (Word Boundary)
+                # re.search akan mencari apakah keyword tersebut adalah kata utuh di dalam teks
+                match_all = True
+                for kw in keywords:
+                    # Menangani karakter spesial (seperti B.) dengan \b kustom
+                    # Pattern memastikan sebelum & sesudah kata bukan huruf/angka
+                    pattern = r'(?<![A-Z0-9])' + re.escape(kw) + r'(?![A-Z0-9])'
+                    if not re.search(pattern, nama_bj_compare):
+                        match_all = False
+                        break
+                        
+                if match_all:
                     nama_sheet = str(ind_row[col_sheet]) if col_sheet else nama_bj
                     merk_val = str(ind_row[col_merk]) if col_merk else nama_sheet
                     return nama_sheet, merk_val
@@ -79,7 +92,7 @@ def generate_excel_report(df_gabungan, df_indikator):
     """Fungsi Utama Pembentukan Semua Aturan Logika Excel"""
     output = io.BytesIO()
     wb = Workbook()
-    wb.remove(wb.active) # Hapus sheet default
+    wb.remove(wb.active)
 
     # ==========================================
     # 1. FILTERING DATA BERDASARKAN ATURAN GUDANG
@@ -100,7 +113,7 @@ def generate_excel_report(df_gabungan, df_indikator):
             
     df_filtered = pd.concat(masks, ignore_index=True) if masks else pd.DataFrame(columns=df_gabungan.columns)
 
-    # PEMETAAN GRUP SHEET & MERK DARI INDIKATOR
+    # PEMETAAN GRUP SHEET & MERK
     res = df_filtered.apply(lambda r: get_sheet_group_and_merk(r, df_indikator), axis=1)
     df_filtered['Sheet_Group'] = [x[0] for x in res]
     df_filtered['Merk_Group'] = [x[1] for x in res]
@@ -120,7 +133,6 @@ def generate_excel_report(df_gabungan, df_indikator):
     else:
         df_filtered['Qty BB Standar (GR)'] = df_filtered.get('Qty', 0)
 
-    # Konversi Khusus DYEING & LAB/RND
     mask_dyeing_lab = df_filtered['Gudang'].astype(str).str.upper().str.contains('DYEING|LAB|RND', regex=True)
     mask_kg_target = df_filtered['Target Unit'].astype(str).str.upper() == 'KG'
     mask_kg_unit = df_filtered['Unit'].astype(str).str.upper() == 'KG'
@@ -142,22 +154,18 @@ def generate_excel_report(df_gabungan, df_indikator):
         is_500_5000 = "500" in g_upper or "5000" in g_upper
         is_dyeing_lab = "DYEING" in g_upper or "LAB" in g_upper or "RND" in g_upper
 
-        # Kolom pembantu dan kolom konversi yang akan DIHAPUS sebelum dicetak ke Excel 
-        # (Kolom konversi GR dihapus jika gudang BUKAN Dyeing / Lab)
         cols_to_drop = ['Sheet_Group', 'Merk_Group']
         if not is_dyeing_lab:
             cols_to_drop.extend(['Qty Target Standar (GR)', 'Qty BB Standar (GR)'])
 
-        # --- A. BUAT SHEET MASTER PER GUDANG ---
+        # --- A. BUAT SHEET MASTER ---
         master_sheet_name = re.sub(r'[\\/*?:\[\]]', '_', f"Master - {gudang_name}")[:31]
         ws_master = wb.create_sheet(title=master_sheet_name)
         
-        # Tombol Kembali
         btn = ws_master.cell(row=1, column=1, value="⬅️ KEMBALI KE SUMMARY")
         btn.hyperlink = "#'Summary'!A1"
         btn.font = Font(color="0563C1", underline="single", bold=True)
         
-        # Tulis Data Master (Mulai baris 3, buang kolom yang tidak perlu)
         gudang_export = gudang_df.drop(columns=cols_to_drop, errors='ignore')
         for c_idx, col_name in enumerate(gudang_export.columns, 1):
             cell = ws_master.cell(row=3, column=c_idx, value=col_name)
@@ -175,10 +183,8 @@ def generate_excel_report(df_gabungan, df_indikator):
         for keys, group_data in grouped:
             nama_bj = str(keys) 
             
-            # Logika Nama Sheet & Merk Display
             if is_500_5000:
                 sheet_name_raw = nama_bj 
-                # Mengambil MEREK dari hasil fungsi get_sheet_group_and_merk
                 merk_display = group_data['Merk_Group'].iloc[0] if not group_data.empty else nama_bj
             else:
                 if "B. " in nama_bj:
@@ -200,12 +206,10 @@ def generate_excel_report(df_gabungan, df_indikator):
             
             ws = wb.create_sheet(title=final_sheet_name)
             
-            # Tombol Kembali
             btn = ws.cell(row=1, column=1, value="⬅️ KEMBALI KE SUMMARY")
             btn.hyperlink = "#'Summary'!A1"
             btn.font = Font(color="0563C1", underline="single", bold=True)
             
-            # Tulis Tabel Kiri (Mulai Baris 3, buang kolom yang tidak perlu)
             group_export = group_data.drop(columns=cols_to_drop, errors='ignore')
             for r_idx, r in enumerate(dataframe_to_rows(group_export, index=False, header=True), 3):
                 for c_idx, val in enumerate(r, 1):
@@ -226,24 +230,25 @@ def generate_excel_report(df_gabungan, df_indikator):
                 cell.font = Font(bold=True, color="FFFFFF")
                 cell.fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
 
-            current_row = 4 # Data rekap mulai baris 4
+            current_row = 4
             sub_grouped = group_data.groupby('Kode Barang Jadi', dropna=False)
             
             for kode_bj, sub_df in sub_grouped:
                 nama_bj_val = sub_df['Nama Barang Jadi'].iloc[0]
                 target_unit_val = sub_df['Target Unit'].iloc[0] if 'Target Unit' in sub_df.columns else ""
-                total_harga_sum = sub_df[kolom_total].sum() # Total harga dijumlah tingkat induk
                 
                 if is_dyeing_lab:
-                    target_qty_sum = sub_df['Qty Target Standar (GR)'].sum()
+                    target_qty_val = sub_df['Qty Target Standar (GR)'].iloc[0]
                     item_grouped = sub_df.groupby(['Kode Item', 'Nama Item', 'Unit'], dropna=False).agg({
-                        'Qty BB Standar (GR)': 'sum'
+                        'Qty BB Standar (GR)': 'sum',
+                        kolom_total: 'sum'
                     }).reset_index()
                     item_grouped.rename(columns={'Qty BB Standar (GR)': 'Qty'}, inplace=True)
                 else:
-                    target_qty_sum = sub_df['Target Qty'].sum()
+                    target_qty_val = sub_df['Target Qty'].iloc[0]
                     item_grouped = sub_df.groupby(['Kode Item', 'Nama Item', 'Unit'], dropna=False).agg({
-                        'Qty': 'sum'
+                        'Qty': 'sum',
+                        kolom_total: 'sum'
                     }).reset_index()
 
                 jumlah_item = len(item_grouped)
@@ -252,21 +257,18 @@ def generate_excel_report(df_gabungan, df_indikator):
                 for _, item_row in item_grouped.iterrows():
                     ws.cell(row=current_row, column=start_col_rekap, value=kode_bj)
                     ws.cell(row=current_row, column=start_col_rekap + 1, value=nama_bj_val)
-                    ws.cell(row=current_row, column=start_col_rekap + 2, value=target_qty_sum)
+                    ws.cell(row=current_row, column=start_col_rekap + 2, value=target_qty_val)
                     ws.cell(row=current_row, column=start_col_rekap + 3, value=target_unit_val)
-                    
                     ws.cell(row=current_row, column=start_col_rekap + 4, value=item_row['Kode Item'])
                     ws.cell(row=current_row, column=start_col_rekap + 5, value=item_row['Nama Item'])
                     ws.cell(row=current_row, column=start_col_rekap + 6, value=item_row['Unit'])
                     ws.cell(row=current_row, column=start_col_rekap + 7, value=item_row['Qty'])
-                    
-                    ws.cell(row=current_row, column=start_col_rekap + 8, value=total_harga_sum) # Disisipkan agar bisa dimerge
+                    ws.cell(row=current_row, column=start_col_rekap + 8, value=item_row[kolom_total]) 
                     current_row += 1
                     
                 if jumlah_item > 1:
                     end_merge_row = current_row - 1
-                    # Merge kolom Level Induk + Kolom Total Harga (Kolom ke-0 s/d 3, dan ke-8)
-                    for col_offset in [0, 1, 2, 3, 8]: 
+                    for col_offset in range(4): 
                         ws.merge_cells(start_row=start_merge_row, start_column=start_col_rekap + col_offset,
                                        end_row=end_merge_row, end_column=start_col_rekap + col_offset)
                         ws.cell(row=start_merge_row, column=start_col_rekap + col_offset).alignment = Alignment(vertical='center', horizontal='center')
@@ -275,13 +277,13 @@ def generate_excel_report(df_gabungan, df_indikator):
             target_u = group_data['Target Unit'].iloc[0] if not group_data.empty and 'Target Unit' in group_data.columns else ""
             
             if is_dyeing_lab:
-                t_qty_sum = group_data['Qty Target Standar (GR)'].sum()
-                q_gram_sum = group_data['Qty Target Standar (GR)'].sum()
-                satuan_target = "GR" # Hardcode GR
-                satuan = "GR"        # Hardcode GR
+                t_qty_sum = group_data.groupby('Kode Barang Jadi', dropna=False)['Qty Target Standar (GR)'].first().sum()
+                q_gram_sum = t_qty_sum
+                satuan_target = "GR"
+                satuan = "GR"
             else:
-                t_qty_sum = group_data['Target Qty'].sum()
-                q_gram_sum = group_data['Target Qty'].sum()
+                t_qty_sum = group_data.groupby('Kode Barang Jadi', dropna=False)['Target Qty'].first().sum()
+                q_gram_sum = t_qty_sum
                 satuan_target = target_u
                 satuan = target_u
             
@@ -347,12 +349,10 @@ if uploaded_files:
     st.info(f"Memproses {len(uploaded_files)} file data mentah... Mohon tunggu.")
     
     try:
-        # Load Indikator jika ada
         df_indikator = None
         if indicator_file is not None:
             df_indikator = pd.read_excel(indicator_file)
             
-        # Bersihkan & Gabung Data Mentah
         list_df_bersih = []
         for file in uploaded_files:
             df_bersih = clean_single_file(file)
@@ -360,10 +360,9 @@ if uploaded_files:
             
         df_gabungan = pd.concat(list_df_bersih, ignore_index=True)
         
-        # Eksekusi
         processed_excel = generate_excel_report(df_gabungan, df_indikator)
         
-        st.success("Semua logika, merging, hyperlink, dan pengelompokan indikator berhasil dieksekusi!")
+        st.success("Semua logika, merging, hyperlink, perlindungan titik angka, dan word boundary sempurna berhasil dieksekusi!")
         
         st.download_button(
             label="📥 Download Laporan Akhir (Excel)",
