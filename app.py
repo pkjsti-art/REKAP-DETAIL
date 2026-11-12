@@ -6,6 +6,34 @@ from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Alignment, Font, PatternFill
 
+def parse_number(val):
+    """Fungsi tangguh untuk mengubah berbagai jenis string format Indonesia menjadi angka murni (Float)"""
+    if pd.isna(val):
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    
+    s = str(val).strip()
+    if not s or s == '-':
+        return 0.0
+    
+    # Bersihkan dari karakter aneh, spasi, atau simbol mata uang (sisakan angka, koma, titik, minus)
+    s = re.sub(r'[^\d.,-]', '', s)
+    
+    # Logika Format Indonesia (Titik = Ribuan, Koma = Desimal)
+    if ',' in s:
+        s = s.replace('.', '')   # Hapus titik pemisah ribuan
+        s = s.replace(',', '.')  # Ubah koma desimal menjadi titik agar bisa dihitung Python
+    else:
+        # Jika tidak ada koma tapi ada titik pemisah ribuan (misal: "1.500")
+        if s.count('.') > 1 or re.search(r'\.\d{3}$', s):
+            s = s.replace('.', '')
+            
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
 def clean_single_file(file):
     """Fungsi untuk membersihkan 1 file mentah"""
     # 1. Hapus 4 baris atas
@@ -28,15 +56,11 @@ def clean_single_file(file):
         if col in df.columns:
             df[col] = df[col].ffill()
     
-    # 6. Perbaikan Format Angka (dari teks ke numerik)
-    kolom_angka = ['Target Qty', 'Qty', 'Total', 'Total Harga'] 
+    # 6. PERBAIKAN: Paksa konversi tipe data ke angka menggunakan fungsi parse_number
+    kolom_angka = ['Target Qty', 'Qty', 'Total', 'Total Harga', 'Harga', 'Berat Netto'] 
     for col in kolom_angka:
         if col in df.columns:
-            # Hanya proses konversi jika data terbaca sebagai teks (object/string)
-            if df[col].dtype == 'object':
-                df[col] = df[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
-            # Pastikan menjadi format angka matematis murni
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            df[col] = df[col].apply(parse_number)
             
     return df
 
@@ -90,12 +114,12 @@ def generate_excel_report(df_gabungan):
             cell.font = Font(bold=True, color="FFFFFF")
             cell.fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
 
+        # Cari nama kolom yang tepat untuk Total Harga 
+        kolom_total = 'Total Harga' if 'Total Harga' in group_data.columns else 'Total'
+        
         # Isi Tabel Rekap Detail
         current_row = 2
         sub_grouped = group_data.groupby('Kode Barang Jadi')
-        
-        # Cari nama kolom yang tepat untuk Total Harga (berjaga-jaga jika namanya 'Total' atau 'Total Harga')
-        kolom_total = 'Total Harga' if 'Total Harga' in group_data.columns else 'Total'
         
         for kode_bj, sub_df in sub_grouped:
             nama_bj_val = sub_df['Nama Barang Jadi'].iloc[0]
