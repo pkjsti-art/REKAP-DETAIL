@@ -1,27 +1,28 @@
 import streamlit as st
 import pandas as pd
 import io
+import re
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Alignment, Font, PatternFill
 
 def clean_single_file(file):
     """Fungsi untuk membersihkan 1 file mentah"""
-    # Hapus 4 baris atas
+    # 1. Hapus 4 baris atas
     df = pd.read_excel(file, skiprows=4)
     
-    # Hapus 4 baris paling bawah
+    # 2. Hapus 4 baris paling bawah
     df = df.iloc[:-4]
     
-    # Hapus baris yang semua kolomnya kosong
+    # 3. Hapus baris yang semua kolomnya kosong
     df = df.dropna(how='all')
     
-    # Filter Kode Item hanya TWP/MWP/MBB/TBB/TBM
+    # 4. Filter Kode Item hanya TWP/MWP/MBB/TBB/TBM
     df['Kode Item'] = df['Kode Item'].astype(str)
     keyword_pattern = 'TWP|MWP|MBB|TBB|TBM'
     df = df[df['Kode Item'].str.contains(keyword_pattern, case=True, na=False)]
     
-    # Forward fill kolom tertentu
+    # 5. Forward fill kolom tertentu
     kolom_ffill = ['Gudang', 'Kode Barang Jadi', 'Nama Barang Jadi']
     df[kolom_ffill] = df[kolom_ffill].ffill()
     
@@ -47,7 +48,12 @@ def generate_excel_report(df_gabungan):
         else:
             sheet_name = nama_bj_str.strip()
             
+        # Bersihkan karakter yang dilarang Excel untuk nama Sheet (menghindari error invalid character)
+        sheet_name = re.sub(r'[\\/*?:\[\]]', '_', sheet_name)
+        
+        # Potong maksimal 31 karakter sesuai batas maksimal Excel
         sheet_name = sheet_name[:31]
+        
         ws = wb.create_sheet(title=sheet_name)
         
         # Tulis tabel master ke sheet
@@ -58,6 +64,7 @@ def generate_excel_report(df_gabungan):
         for cell in ws[1]:
             cell.font = Font(bold=True)
             
+        # Tentukan posisi Tabel Rekap Detail (2 kolom kosong setelah tabel master)
         max_col_master = ws.max_column
         start_col_rekap = max_col_master + 3
         
@@ -89,13 +96,13 @@ def generate_excel_report(df_gabungan):
             start_merge_row = current_row
             
             for _, item_row in item_grouped.iterrows():
-                # Level 1
+                # Tulis Level 1
                 ws.cell(row=current_row, column=start_col_rekap, value=kode_bj)
                 ws.cell(row=current_row, column=start_col_rekap + 1, value=nama_bj_val)
                 ws.cell(row=current_row, column=start_col_rekap + 2, value=target_qty_sum)
                 ws.cell(row=current_row, column=start_col_rekap + 3, value=target_unit_val)
                 
-                # Level 2
+                # Tulis Level 2
                 ws.cell(row=current_row, column=start_col_rekap + 4, value=item_row['Kode Item'])
                 ws.cell(row=current_row, column=start_col_rekap + 5, value=item_row['Nama Item'])
                 ws.cell(row=current_row, column=start_col_rekap + 6, value=item_row['Unit'])
@@ -104,7 +111,7 @@ def generate_excel_report(df_gabungan):
                 
                 current_row += 1
                 
-            # Merge cell
+            # Merge cell untuk Level 1 jika ada lebih dari 1 item di bawahnya
             if jumlah_item > 1:
                 end_merge_row = current_row - 1
                 for col_offset in range(4):
@@ -132,11 +139,13 @@ def generate_excel_report(df_gabungan):
     ws_summary = wb.create_sheet(title="Summary", index=0)
     df_summary = pd.DataFrame(summary_data)
     
+    # Tulis header Summary
     for c_idx, col_name in enumerate(df_summary.columns, 1):
         cell = ws_summary.cell(row=1, column=c_idx, value=col_name)
         cell.font = Font(bold=True)
         cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
         
+    # Tulis baris data Summary
     for r_idx, row in enumerate(dataframe_to_rows(df_summary, index=False, header=False), 2):
         for c_idx, value in enumerate(row, 1):
             ws_summary.cell(row=r_idx, column=c_idx, value=value)
@@ -148,10 +157,10 @@ def generate_excel_report(df_gabungan):
 # ==========================================
 # UI STREAMLIT
 # ==========================================
-st.set_page_config(page_title="Pengelolaan Data", layout="wide")
+st.set_page_config(page_title="Pengelolaan Data Laporan", layout="wide")
 st.title("Aplikasi Pengelolaan Data Laporan")
 
-# Tambahkan accept_multiple_files=True
+# Upload lebih dari satu file
 uploaded_files = st.file_uploader("Upload File Excel Mentah Anda (Bisa lebih dari 1)", type=['xlsx'], accept_multiple_files=True)
 
 if uploaded_files:
@@ -164,14 +173,15 @@ if uploaded_files:
             df_bersih = clean_single_file(file)
             list_df_bersih.append(df_bersih)
             
-        # 2. Gabungkan semua data bersih menjadi satu (header otomatis terkelola)
+        # 2. Gabungkan semua data bersih menjadi satu tabel utama
         df_gabungan = pd.concat(list_df_bersih, ignore_index=True)
         
-        # 3. Jalankan pembentukan laporan dari data gabungan
+        # 3. Jalankan pembentukan Excel dari data gabungan
         processed_excel = generate_excel_report(df_gabungan)
         
         st.success("Seluruh data berhasil digabungkan, diolah, dan laporan siap diunduh!")
         
+        # Tombol Download
         st.download_button(
             label="📥 Download Laporan Akhir (Excel)",
             data=processed_excel,
