@@ -91,11 +91,10 @@ custom_css = """
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# Judul Dashboard
 st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN</h1>", unsafe_allow_html=True)
 
 # ==========================================
-# FUNGSI BACKEND (LOGIKA DATA UTUH)
+# FUNGSI BACKEND
 # ==========================================
 def parse_number(val):
     if pd.isna(val):
@@ -124,11 +123,9 @@ def clean_single_file(file, file_idx):
     df = df.iloc[:-4]
     df = df.dropna(how='all')
     
-    # REVISI PENTING: Penandaan Tx_ID (Transaction ID) sebelum di Forward Fill
     ind_col = 'Kode Barang Jadi' if 'Kode Barang Jadi' in df.columns else ('Gudang' if 'Gudang' in df.columns else None)
     if ind_col:
         is_parent = df[ind_col].notna() & (df[ind_col].astype(str).str.strip() != '') & (df[ind_col].astype(str).str.lower() != 'nan')
-        # Format Tx_ID dibuat unik per file (misal: "0_1", "0_2", "1_1") agar aman digabung
         df['Tx_ID'] = str(file_idx) + "_" + is_parent.cumsum().astype(str)
     else:
         df['Tx_ID'] = f"{file_idx}_1"
@@ -198,7 +195,6 @@ def generate_excel_report(df_gabungan, df_indikator):
     wb = Workbook()
     wb.remove(wb.active)
 
-    # 1. FILTERING DATA BERDASARKAN ATURAN GUDANG
     df_gabungan['Kode Item'] = df_gabungan['Kode Item'].astype(str)
     masks = []
     
@@ -219,7 +215,6 @@ def generate_excel_report(df_gabungan, df_indikator):
     df_filtered['Sheet_Group'] = [x[0] for x in res]
     df_filtered['Merk_Group'] = [x[1] for x in res]
 
-    # 2. PENAMBAHAN KOLOM STANDAR (GR) & KONVERSI
     if 'Target Unit' in df_filtered.columns and 'Target Qty' in df_filtered.columns:
         loc = df_filtered.columns.get_loc('Target Unit')
         idx = loc + 1 if isinstance(loc, int) else len(df_filtered.columns)
@@ -248,7 +243,6 @@ def generate_excel_report(df_gabungan, df_indikator):
     master_names_dict = {}
     kolom_total = 'Total Harga' if 'Total Harga' in df_filtered.columns else 'Total'
 
-    # 3. LOOPING PER GUDANG
     for gudang, gudang_df in df_filtered.groupby('Gudang', dropna=False):
         gudang_name = str(gudang)
         g_upper = gudang_name.upper()
@@ -279,7 +273,6 @@ def generate_excel_report(df_gabungan, df_indikator):
                 ws_master.cell(row=r_idx, column=c_idx, value=value)
                 
         summary_dict[gudang_name] = []
-        
         grouped = gudang_df.groupby('Sheet_Group', dropna=False)
             
         for keys, group_data in grouped:
@@ -338,17 +331,22 @@ def generate_excel_report(df_gabungan, df_indikator):
                 nama_bj_val = sub_df['Nama Barang Jadi'].iloc[0]
                 target_unit_val = sub_df['Target Unit'].iloc[0] if 'Target Unit' in sub_df.columns else ""
                 
-                # REVISI PENJUMLAHAN AKURAT: Dijumlahkan per transaksi (Tx_ID) agar tak terlipatgandakan
+                # REVISI: Hardcode "GR" untuk semua gudang selain 500 dan 5000 MRT
+                display_target_unit = target_unit_val if is_500_5000 else "GR"
+                
                 if is_dyeing_lab:
                     target_qty_val = sub_df.drop_duplicates(subset=['Tx_ID'])['Qty Target Standar (GR)'].sum()
-                    item_grouped = sub_df.groupby(['Kode Item', 'Nama Item', 'Unit'], dropna=False).agg({
+                    # REVISI: Grouping hanya berdasarkan Kode dan Nama Item saja (mengabaikan Unit agar bisa dilebur)
+                    item_grouped = sub_df.groupby(['Kode Item', 'Nama Item'], dropna=False).agg({
+                        'Unit': 'first',
                         'Qty BB Standar (GR)': 'sum',
                         kolom_total: 'sum'
                     }).reset_index()
                     item_grouped.rename(columns={'Qty BB Standar (GR)': 'Qty'}, inplace=True)
                 else:
                     target_qty_val = sub_df.drop_duplicates(subset=['Tx_ID'])['Target Qty'].sum()
-                    item_grouped = sub_df.groupby(['Kode Item', 'Nama Item', 'Unit'], dropna=False).agg({
+                    item_grouped = sub_df.groupby(['Kode Item', 'Nama Item'], dropna=False).agg({
+                        'Unit': 'first',
                         'Qty': 'sum',
                         kolom_total: 'sum'
                     }).reset_index()
@@ -357,13 +355,16 @@ def generate_excel_report(df_gabungan, df_indikator):
                 start_merge_row = current_row
                 
                 for _, item_row in item_grouped.iterrows():
+                    # REVISI: Hardcode "GR" untuk semua gudang selain 500 dan 5000 MRT
+                    display_item_unit = item_row['Unit'] if is_500_5000 else "GR"
+                    
                     ws.cell(row=current_row, column=start_col_rekap, value=kode_bj)
                     ws.cell(row=current_row, column=start_col_rekap + 1, value=nama_bj_val)
                     ws.cell(row=current_row, column=start_col_rekap + 2, value=target_qty_val)
-                    ws.cell(row=current_row, column=start_col_rekap + 3, value=target_unit_val)
+                    ws.cell(row=current_row, column=start_col_rekap + 3, value=display_target_unit)
                     ws.cell(row=current_row, column=start_col_rekap + 4, value=item_row['Kode Item'])
                     ws.cell(row=current_row, column=start_col_rekap + 5, value=item_row['Nama Item'])
-                    ws.cell(row=current_row, column=start_col_rekap + 6, value=item_row['Unit'])
+                    ws.cell(row=current_row, column=start_col_rekap + 6, value=display_item_unit)
                     ws.cell(row=current_row, column=start_col_rekap + 7, value=item_row['Qty'])
                     ws.cell(row=current_row, column=start_col_rekap + 8, value=item_row[kolom_total]) 
                     current_row += 1
@@ -377,21 +378,20 @@ def generate_excel_report(df_gabungan, df_indikator):
 
             target_u = group_data['Target Unit'].iloc[0] if not group_data.empty and 'Target Unit' in group_data.columns else ""
             
-            # REVISI SUMMARY PADA LOGIKA SUMMING
             if is_dyeing_lab:
                 t_qty_sum = group_data.drop_duplicates(subset=['Tx_ID'])['Qty Target Standar (GR)'].sum()
                 q_gram_sum = t_qty_sum
-                satuan_target = "GR"
-                satuan = "GR"
             else:
                 t_qty_sum = group_data.drop_duplicates(subset=['Tx_ID'])['Target Qty'].sum()
                 q_gram_sum = t_qty_sum
-                satuan_target = target_u
-                satuan = target_u
             
             if is_500_5000:
                 q_gram_sum = group_data['Qty'].sum()
+                satuan_target = target_u
                 satuan = group_data['Unit'].iloc[0] if not group_data.empty and 'Unit' in group_data.columns else ""
+            else:
+                satuan_target = "GR"
+                satuan = "GR"
 
             summary_dict[gudang_name].append({
                 'DIVISI': gudang_name,
@@ -435,7 +435,6 @@ def generate_excel_report(df_gabungan, df_indikator):
         
     wb.save(output)
     return output.getvalue()
-
 
 # ==========================================
 # UI STREAMLIT: KOLOM UPLOAD
