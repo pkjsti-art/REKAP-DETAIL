@@ -56,7 +56,7 @@ def clean_single_file(file):
         if col in df.columns:
             df[col] = df[col].ffill()
     
-    # 6. Paksa konversi tipe data ke angka menggunakan fungsi parse_number
+    # 6. Paksa konversi tipe data ke angka
     kolom_angka = ['Target Qty', 'Qty', 'Total', 'Total Harga', 'Harga', 'Berat Netto'] 
     for col in kolom_angka:
         if col in df.columns:
@@ -77,18 +77,15 @@ def generate_excel_report(df_gabungan):
     grouped_df = df_gabungan.groupby('Nama Barang Jadi')
 
     for nama_bj, group_data in grouped_df:
-        # Penamaan Sheet: Ambil penggalan setelah "-"
+        # 1. Penamaan Sheet: Tetap logika awal (Ambil penggalan setelah "-")
         nama_bj_str = str(nama_bj)
         if "-" in nama_bj_str:
             sheet_name = nama_bj_str.split("-", 1)[1].strip()
         else:
             sheet_name = nama_bj_str.strip()
             
-        # Bersihkan karakter yang dilarang Excel untuk nama Sheet
-        sheet_name = re.sub(r'[\\/*?:\[\]]', '_', sheet_name)
-        
-        # Potong maksimal 31 karakter sesuai batas maksimal Excel
-        sheet_name = sheet_name[:31]
+        sheet_name = re.sub(r'[\\/*?:\[\]]', '_', sheet_name) # Bersihkan karakter terlarang
+        sheet_name = sheet_name[:31] # Potong maksimal 31 karakter
         
         ws = wb.create_sheet(title=sheet_name)
         
@@ -100,7 +97,7 @@ def generate_excel_report(df_gabungan):
         for cell in ws[1]:
             cell.font = Font(bold=True)
             
-        # Tentukan posisi Tabel Rekap Detail (2 kolom kosong setelah tabel master)
+        # Tentukan posisi Tabel Rekap Detail
         max_col_master = ws.max_column
         start_col_rekap = max_col_master + 3
         
@@ -114,7 +111,6 @@ def generate_excel_report(df_gabungan):
             cell.font = Font(bold=True, color="FFFFFF")
             cell.fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
 
-        # Cari nama kolom yang tepat untuk Total Harga 
         kolom_total = 'Total Harga' if 'Total Harga' in group_data.columns else 'Total'
         
         # Isi Tabel Rekap Detail
@@ -135,13 +131,11 @@ def generate_excel_report(df_gabungan):
             start_merge_row = current_row
             
             for _, item_row in item_grouped.iterrows():
-                # Tulis Level 1
                 ws.cell(row=current_row, column=start_col_rekap, value=kode_bj)
                 ws.cell(row=current_row, column=start_col_rekap + 1, value=nama_bj_val)
                 ws.cell(row=current_row, column=start_col_rekap + 2, value=target_qty_sum)
                 ws.cell(row=current_row, column=start_col_rekap + 3, value=target_unit_val)
                 
-                # Tulis Level 2
                 ws.cell(row=current_row, column=start_col_rekap + 4, value=item_row['Kode Item'])
                 ws.cell(row=current_row, column=start_col_rekap + 5, value=item_row['Nama Item'])
                 ws.cell(row=current_row, column=start_col_rekap + 6, value=item_row['Unit'])
@@ -150,7 +144,6 @@ def generate_excel_report(df_gabungan):
                 
                 current_row += 1
                 
-            # Merge cell untuk Level 1 jika ada lebih dari 1 item di bawahnya
             if jumlah_item > 1:
                 end_merge_row = current_row - 1
                 for col_offset in range(4):
@@ -161,41 +154,66 @@ def generate_excel_report(df_gabungan):
         # ==========================================
         # KUMPULKAN DATA UNTUK SUMMARY
         # ==========================================
-        sum_group = group_data.groupby(['Gudang', 'Kode Barang Jadi', 'Nama Barang Jadi', 'Target Unit']).agg({'Target Qty': 'sum'}).reset_index()
+        # Mengelompokkan MURNI berdasarkan 'Nama Barang Jadi' saja agar datanya unik
+        sum_group = group_data.groupby(['Gudang', 'Nama Barang Jadi', 'Target Unit']).agg({'Target Qty': 'sum'}).reset_index()
         for _, row in sum_group.iterrows():
+            nama_asli = str(row['Nama Barang Jadi'])
+            
+            # REVISI: Logika penggalan untuk kolom MERK
+            if "B. " in nama_asli:
+                merk_display = nama_asli.split("B. ", 1)[1].strip()
+            elif "-" in nama_asli:
+                merk_display = nama_asli.split("-", 1)[1].strip()
+            else:
+                merk_display = nama_asli.strip()
+
+            # Menyimpan data termasuk nama "sheet_name" aslinya secara rahasia
             summary_data.append({
                 'DIVISI': row['Gudang'],
-                'MERK': f"{row['Kode Barang Jadi']} {row['Nama Barang Jadi']}",
+                'MERK': merk_display,
                 'SATUAN TARGET': row['Target Unit'],
                 'QTY TARGET': row['Target Qty'],
                 'SATUAN': row['Target Unit'],
-                'QTY GRAM': row['Target Qty']
+                'QTY GRAM': row['Target Qty'],
+                'Sheet_Link': sheet_name # Variabel belakang layar untuk pengikat Hyperlink
             })
 
     # ==========================================
     # PEMBUATAN SHEET SUMMARY
     # ==========================================
-    ws_summary = wb.create_sheet(title="Summary", index=0) # Posisi paling depan
-    df_summary = pd.DataFrame(summary_data)
+    ws_summary = wb.create_sheet(title="Summary", index=0)
     
-    for c_idx, col_name in enumerate(df_summary.columns, 1):
+    headers = ['DIVISI', 'MERK', 'SATUAN TARGET', 'QTY TARGET', 'SATUAN', 'QTY GRAM']
+    
+    # Tulis header Summary
+    for c_idx, col_name in enumerate(headers, 1):
         cell = ws_summary.cell(row=1, column=c_idx, value=col_name)
         cell.font = Font(bold=True)
         cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
         
-    for r_idx, row in enumerate(dataframe_to_rows(df_summary, index=False, header=False), 2):
-        for c_idx, value in enumerate(row, 1):
-            ws_summary.cell(row=r_idx, column=c_idx, value=value)
+    # Tulis baris data Summary beserta eksekusi Hyperlink
+    for r_idx, row in enumerate(summary_data, 2):
+        ws_summary.cell(row=r_idx, column=1, value=row['DIVISI'])
+        
+        # Tulis MERK dan sisipkan fungsi Hyperlink internal Excel
+        cell_merk = ws_summary.cell(row=r_idx, column=2, value=row['MERK'])
+        cell_merk.hyperlink = f"#'{row['Sheet_Link']}'!A1" # Mengikat ke Sheet yang tepat sel A1
+        cell_merk.font = Font(color="0563C1", underline="single") # Format biru bergaris bawah (Standar Hyperlink)
+        
+        ws_summary.cell(row=r_idx, column=3, value=row['SATUAN TARGET'])
+        ws_summary.cell(row=r_idx, column=4, value=row['QTY TARGET'])
+        ws_summary.cell(row=r_idx, column=5, value=row['SATUAN'])
+        ws_summary.cell(row=r_idx, column=6, value=row['QTY GRAM'])
 
     # ==========================================
     # PEMBUATAN SHEET MASTER DATA
     # ==========================================
-    ws_master = wb.create_sheet(title="master data", index=1) # Posisi setelah Summary
+    ws_master = wb.create_sheet(title="master data", index=1)
     
     for c_idx, col_name in enumerate(df_gabungan.columns, 1):
         cell = ws_master.cell(row=1, column=c_idx, value=col_name)
         cell.font = Font(bold=True)
-        cell.fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid") # Warna hijau muda untuk master
+        cell.fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
         
     for r_idx, row in enumerate(dataframe_to_rows(df_gabungan, index=False, header=False), 2):
         for c_idx, value in enumerate(row, 1):
@@ -211,28 +229,22 @@ def generate_excel_report(df_gabungan):
 st.set_page_config(page_title="Pengelolaan Data Laporan", layout="wide")
 st.title("Aplikasi Pengelolaan Data Laporan")
 
-# Upload lebih dari satu file
 uploaded_files = st.file_uploader("Upload File Excel Mentah Anda (Bisa lebih dari 1)", type=['xlsx'], accept_multiple_files=True)
 
 if uploaded_files:
     st.info(f"Memproses {len(uploaded_files)} file... Mohon tunggu.")
     
     try:
-        # 1. Bersihkan setiap file dan tampung di list
         list_df_bersih = []
         for file in uploaded_files:
             df_bersih = clean_single_file(file)
             list_df_bersih.append(df_bersih)
             
-        # 2. Gabungkan semua data bersih menjadi satu tabel utama
         df_gabungan = pd.concat(list_df_bersih, ignore_index=True)
-        
-        # 3. Jalankan pembentukan Excel dari data gabungan
         processed_excel = generate_excel_report(df_gabungan)
         
         st.success("Seluruh data berhasil digabungkan, diolah, dan laporan siap diunduh!")
         
-        # Tombol Download
         st.download_button(
             label="📥 Download Laporan Akhir (Excel)",
             data=processed_excel,
