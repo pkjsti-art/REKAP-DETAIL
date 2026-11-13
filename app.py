@@ -101,7 +101,6 @@ def clean_single_file(file, file_idx):
     else:
         df['Tx_ID'] = f"{file_idx}_1"
     
-    # Forward Fill Dinamis (Menangkap Kode & Nama Produk secara otomatis jika di kiri Kode Item)
     if 'Kode Item' in df.columns:
         idx = df.columns.get_loc('Kode Item')
         if isinstance(idx, int):
@@ -163,7 +162,6 @@ def get_sheet_group_and_merk(r, df_ind):
         return nama_bj, nama_bj
     
     else:
-        # LOGIKA KHUSUS GUDANG SELAIN 500 & 5000 (Softcone, Dyeing, Lab)
         if "SOFTCONE" in gudang:
             short_gudang = "SOFTCONE"
         elif "DYEING" in gudang:
@@ -266,7 +264,6 @@ def generate_excel_report(df_gabungan, df_indikator):
             sheet_name_raw = str(keys)
             merk_display = group_data['Merk_Group'].iloc[0] if not group_data.empty else sheet_name_raw
             
-            # Penggantian karakter ilegal menjadi strip (-)
             sheet_name_clean = re.sub(r'[\\/*?:\[\]]', '-', sheet_name_raw)[:31]
             base_sheet_name = sheet_name_clean
             counter = 1
@@ -291,7 +288,6 @@ def generate_excel_report(df_gabungan, df_indikator):
             max_col_master = ws.max_column
             start_col_rekap = max_col_master + 3
             
-            # PENAMBAHAN KODE DAN NAMA PRODUK DI HEADER REKAP DETAIL
             rekap_headers = [
                 "Kode Barang Jadi", "Nama Barang Jadi", "Kode Produk", "Nama Produk", 
                 "Target Qty", "Target Unit", "Kode Item", "Nama Item", "Unit", "Qty", "Total Harga"
@@ -302,7 +298,6 @@ def generate_excel_report(df_gabungan, df_indikator):
                 cell.fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
 
             current_row = 4
-            # PENGELOMPOKKAN REKAP BERDASARKAN 4 PILAR INDUK
             sub_grouped = group_data.groupby(['Kode Barang Jadi', 'Nama Barang Jadi', 'Kode Produk', 'Nama Produk'], dropna=False)
             
             for (kbj, nbj, kp, np), sub_df in sub_grouped:
@@ -346,13 +341,12 @@ def generate_excel_report(df_gabungan, df_indikator):
                     
                 if jumlah_item > 1:
                     end_merge_row = current_row - 1
-                    # MERGE 6 KOLOM AWAL (Kode Barang Jadi hingga Target Unit)
                     for col_offset in range(6): 
                         ws.merge_cells(start_row=start_merge_row, start_column=start_col_rekap + col_offset,
                                        end_row=end_merge_row, end_column=start_col_rekap + col_offset)
-                        ws.cell(row=start_merge_row, column=start_col_rekap + col_offset).alignment = Alignment(vertical='center', horizontal='center')
+                        # UPDATE: ALIGNMENT RATA KIRI DAN ATAS UNTUK MERGE CELL REKAP DETAIL
+                        ws.cell(row=start_merge_row, column=start_col_rekap + col_offset).alignment = Alignment(horizontal='left', vertical='top')
 
-            # MENAMPUNG DATA SUMMARY (DI-GROUPING PER KODE PRODUK & NAMA PRODUK DALAM 1 SHEET)
             prod_grouped = group_data.groupby(['Kode Produk', 'Nama Produk'], dropna=False)
             sheet_summary_rows = []
             
@@ -386,7 +380,7 @@ def generate_excel_report(df_gabungan, df_indikator):
                 })
             summary_dict[gudang_name].append(sheet_summary_rows)
             
-    # 4. PENULISAN SHEET SUMMARY (DENGAN LOGIKA MERGE CELL UNTUK MULTI-PRODUK)
+    # 4. PENULISAN SHEET SUMMARY
     summary_headers = ['DIVISI', 'MERK', 'KODE PRODUK', 'NAMA PRODUK', 'SATUAN TARGET', 'QTY TARGET', 'SATUAN', 'QTY GRAM']
     current_start_col = 1
     
@@ -423,11 +417,11 @@ def generate_excel_report(df_gabungan, df_indikator):
                 
             end_merge_row = current_row - 1
             if end_merge_row > start_merge_row:
-                # Merge kolom Divisi & Merk jika ada >1 produk di 1 sheet
                 ws_summary.merge_cells(start_row=start_merge_row, start_column=current_start_col, end_row=end_merge_row, end_column=current_start_col)
                 ws_summary.merge_cells(start_row=start_merge_row, start_column=current_start_col + 1, end_row=end_merge_row, end_column=current_start_col + 1)
-                ws_summary.cell(row=start_merge_row, column=current_start_col).alignment = Alignment(vertical='center', horizontal='center')
-                ws_summary.cell(row=start_merge_row, column=current_start_col + 1).alignment = Alignment(vertical='center', horizontal='center')
+                # UPDATE: ALIGNMENT RATA KIRI DAN ATAS UNTUK MERGE CELL SUMMARY
+                ws_summary.cell(row=start_merge_row, column=current_start_col).alignment = Alignment(horizontal='left', vertical='top')
+                ws_summary.cell(row=start_merge_row, column=current_start_col + 1).alignment = Alignment(horizontal='left', vertical='top')
             
         current_start_col += len(summary_headers) + 2 
         
