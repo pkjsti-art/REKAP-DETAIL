@@ -13,15 +13,12 @@ st.set_page_config(page_title="Sistem Rekap Detail", layout="wide", initial_side
 
 custom_css = """
 <style>
-    /* Latar Belakang Utama Aplikasi (Deep Dark Navy/Black) */
     .stApp {
         background-color: #040814 !important;
         background-image: radial-gradient(circle at 50% 0%, #0a1931 0%, #040814 70%);
         color: #e0f7fa !important;
         font-family: 'Courier New', Courier, monospace;
     }
-
-    /* Styling Judul dan Header */
     h1, h2, h3, h4, h5, h6 {
         color: #00f3ff !important;
         text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
@@ -29,8 +26,6 @@ custom_css = """
         text-transform: uppercase;
         letter-spacing: 2px;
     }
-
-    /* Styling Kolom Upload File (Glowing Dashed Border) */
     div[data-testid="stFileUploadDropzone"] {
         background-color: rgba(4, 12, 32, 0.7) !important;
         border: 2px dashed #00f3ff !important;
@@ -43,13 +38,9 @@ custom_css = """
         box-shadow: 0 0 25px rgba(0, 255, 255, 0.6);
         background-color: rgba(0, 243, 255, 0.05) !important;
     }
-
-    /* Warna Teks pada Uploader */
     .st-emotion-cache-1gblk4, .st-emotion-cache-1wivap2, .st-emotion-cache-1jspxgj {
         color: #00f3ff !important;
     }
-
-    /* Tombol Utama (Hollow Neon Style) */
     div[data-testid="stButton"] > button {
         background-color: transparent !important;
         color: #00f3ff !important;
@@ -67,8 +58,6 @@ custom_css = """
         color: #040814 !important;
         box-shadow: 0 0 20px rgba(0, 243, 255, 0.8);
     }
-
-    /* Notifikasi Info / Success (Panel Transparan) */
     div[data-testid="stAlert"] {
         background-color: rgba(0, 243, 255, 0.05) !important;
         border: 1px solid #00f3ff !important;
@@ -76,47 +65,29 @@ custom_css = """
         color: #e0f7fa !important;
         box-shadow: 0 0 10px rgba(0, 243, 255, 0.1);
     }
-    
-    /* Ikon dan Markdown Text */
-    .stMarkdown p {
-        color: #b2ebf2;
-    }
-    
-    /* Label Input */
-    label {
-        color: #00f3ff !important;
-        font-weight: 600 !important;
-    }
+    .stMarkdown p { color: #b2ebf2; }
+    label { color: #00f3ff !important; font-weight: 600 !important; }
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
-
-st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN (UPDATE V3)</h1>", unsafe_allow_html=True)
 
 # ==========================================
 # FUNGSI BACKEND
 # ==========================================
 def parse_number(val):
-    if pd.isna(val):
-        return 0.0
-    if isinstance(val, (int, float)):
-        return float(val)
-    
+    if pd.isna(val): return 0.0
+    if isinstance(val, (int, float)): return float(val)
     s = str(val).strip()
-    if not s or s == '-':
-        return 0.0
-    
+    if not s or s == '-': return 0.0
     s = re.sub(r'[^\d.,-]', '', s)
     if ',' in s:
         s = s.replace('.', '').replace(',', '.')
     else:
         if s.count('.') > 1 or re.search(r'\.\d{3}$', s):
             s = s.replace('.', '')
-            
-    try:
-        return float(s)
-    except ValueError:
-        return 0.0
+    try: return float(s)
+    except ValueError: return 0.0
 
 def clean_single_file(file, file_idx):
     df = pd.read_excel(file, skiprows=4)
@@ -130,13 +101,14 @@ def clean_single_file(file, file_idx):
     else:
         df['Tx_ID'] = f"{file_idx}_1"
     
+    # Forward Fill Dinamis (Menangkap Kode & Nama Produk secara otomatis jika di kiri Kode Item)
     if 'Kode Item' in df.columns:
         idx = df.columns.get_loc('Kode Item')
         if isinstance(idx, int):
             kolom_ffill_dinamis = df.columns[:idx]
             df[kolom_ffill_dinamis] = df[kolom_ffill_dinamis].ffill()
     else:
-        kolom_ffill = ['Gudang', 'Kode Barang Jadi', 'Nama Barang Jadi', 'Target Qty', 'Target Unit']
+        kolom_ffill = ['Gudang', 'Kode Barang Jadi', 'Nama Barang Jadi', 'Kode Produk', 'Nama Produk', 'Target Qty', 'Target Unit']
         cols_to_fill = [c for c in kolom_ffill if c in df.columns]
         if cols_to_fill:
             df[cols_to_fill] = df[cols_to_fill].ffill()
@@ -151,44 +123,59 @@ def clean_single_file(file, file_idx):
 def get_sheet_group_and_merk(r, df_ind):
     gudang = str(r.get('Gudang', '')).upper()
     nama_bj = str(r.get('Nama Barang Jadi', ''))
+    kode_prod = str(r.get('Kode Produk', '')).strip()
+    if kode_prod.lower() == 'nan': kode_prod = ""
     target_unit_raw = str(r.get('Target Unit', '')).upper().strip()
     
-    if ("500" in gudang or "5000" in gudang) and df_ind is not None and not df_ind.empty:
-        df_filter = df_ind[df_ind.iloc[:, 0].astype(str).str.upper() == gudang]
-        
-        nama_bj_upper = nama_bj.upper()
-        nama_bj_compare = re.sub(r'(?<=\d)\.(?=\d)', '', nama_bj_upper)
-        
-        cols = df_ind.columns
-        col_ind = next((c for c in cols if 'NAMA BARANG JADI' in c.upper() or 'INDIKATOR' in c.upper()), cols[1] if len(cols) > 1 else None)
-        col_target_unit = next((c for c in cols if 'TARGET UNIT' in c.upper()), cols[2] if len(cols) > 2 else None)
-        col_sheet = next((c for c in cols if 'SHEET' in c.upper()), cols[3] if len(cols) > 3 else None)
-        col_merk = next((c for c in cols if 'MEREK' in c.upper() or 'MERK' in c.upper()), cols[4] if len(cols) > 4 else None)
-        
-        for _, ind_row in df_filter.iterrows():
-            if col_ind is not None:
-                if col_target_unit is not None:
-                    ind_tu = str(ind_row[col_target_unit]).upper().strip()
-                    if target_unit_raw != ind_tu:
-                        continue 
-                
-                keyword_raw = str(ind_row[col_ind]).upper()
-                keyword_clean = re.sub(r'(?<=\d)\.(?=\d)', '', keyword_raw)
-                keywords = keyword_clean.split()
-                
-                match_all = True
-                for kw in keywords:
-                    pattern = r'(?<![A-Z0-9])' + re.escape(kw) + r'(?![A-Z0-9])'
-                    if not re.search(pattern, nama_bj_compare):
-                        match_all = False
-                        break
-                        
-                if match_all:
-                    nama_sheet = str(ind_row[col_sheet]) if col_sheet else nama_bj
-                    merk_val = str(ind_row[col_merk]) if col_merk else nama_sheet
-                    return nama_sheet, merk_val
-                
-    return nama_bj, nama_bj
+    is_500_5000 = "500" in gudang or "5000" in gudang
+    
+    if is_500_5000:
+        if df_ind is not None and not df_ind.empty:
+            df_filter = df_ind[df_ind.iloc[:, 0].astype(str).str.upper() == gudang]
+            nama_bj_compare = re.sub(r'(?<=\d)\.(?=\d)', '', nama_bj.upper())
+            
+            cols = df_ind.columns
+            col_ind = next((c for c in cols if 'NAMA BARANG JADI' in c.upper() or 'INDIKATOR' in c.upper()), cols[1] if len(cols) > 1 else None)
+            col_target_unit = next((c for c in cols if 'TARGET UNIT' in c.upper()), cols[2] if len(cols) > 2 else None)
+            col_sheet = next((c for c in cols if 'SHEET' in c.upper()), cols[3] if len(cols) > 3 else None)
+            col_merk = next((c for c in cols if 'MEREK' in c.upper() or 'MERK' in c.upper()), cols[4] if len(cols) > 4 else None)
+            
+            for _, ind_row in df_filter.iterrows():
+                if col_ind is not None:
+                    if col_target_unit is not None:
+                        ind_tu = str(ind_row[col_target_unit]).upper().strip()
+                        if target_unit_raw != ind_tu: continue 
+                    
+                    keyword_clean = re.sub(r'(?<=\d)\.(?=\d)', '', str(ind_row[col_ind]).upper())
+                    keywords = keyword_clean.split()
+                    
+                    match_all = True
+                    for kw in keywords:
+                        pattern = r'(?<![A-Z0-9])' + re.escape(kw) + r'(?![A-Z0-9])'
+                        if not re.search(pattern, nama_bj_compare):
+                            match_all = False
+                            break
+                            
+                    if match_all:
+                        nama_sheet = str(ind_row[col_sheet]) if col_sheet else nama_bj
+                        merk_val = str(ind_row[col_merk]) if col_merk else nama_sheet
+                        return nama_sheet, merk_val
+        return nama_bj, nama_bj
+    
+    else:
+        # LOGIKA KHUSUS GUDANG SELAIN 500 & 5000 (Softcone, Dyeing, Lab)
+        if "SOFTCONE" in gudang:
+            short_gudang = "SOFTCONE"
+        elif "DYEING" in gudang:
+            short_gudang = "DYEING"
+        elif "LAB" in gudang or "RND" in gudang:
+            short_gudang = "LAB & RND"
+        else:
+            short_gudang = gudang
+            
+        nama_sheet_raw = f"{kode_prod} {short_gudang}".strip() if kode_prod else short_gudang
+        merk_val = short_gudang
+        return nama_sheet_raw, merk_val
 
 def generate_excel_report(df_gabungan, df_indikator):
     output = io.BytesIO()
@@ -276,22 +263,11 @@ def generate_excel_report(df_gabungan, df_indikator):
         grouped = gudang_df.groupby('Sheet_Group', dropna=False)
             
         for keys, group_data in grouped:
-            nama_bj = str(keys) 
+            sheet_name_raw = str(keys)
+            merk_display = group_data['Merk_Group'].iloc[0] if not group_data.empty else sheet_name_raw
             
-            if is_500_5000:
-                sheet_name_raw = nama_bj 
-                merk_display = group_data['Merk_Group'].iloc[0] if not group_data.empty else nama_bj
-            else:
-                if "B. " in nama_bj:
-                    penggalan = nama_bj.split("B. ", 1)[1].strip()
-                elif "-" in nama_bj:
-                    penggalan = nama_bj.split("-", 1)[1].strip()
-                else:
-                    penggalan = nama_bj.strip()
-                sheet_name_raw = penggalan
-                merk_display = penggalan
-                
-            sheet_name_clean = re.sub(r'[\\/*?:\[\]]', '_', sheet_name_raw)[:31]
+            # Penggantian karakter ilegal menjadi strip (-)
+            sheet_name_clean = re.sub(r'[\\/*?:\[\]]', '-', sheet_name_raw)[:31]
             base_sheet_name = sheet_name_clean
             counter = 1
             while base_sheet_name in wb.sheetnames:
@@ -315,9 +291,10 @@ def generate_excel_report(df_gabungan, df_indikator):
             max_col_master = ws.max_column
             start_col_rekap = max_col_master + 3
             
+            # PENAMBAHAN KODE DAN NAMA PRODUK DI HEADER REKAP DETAIL
             rekap_headers = [
-                "Kode Barang Jadi", "Nama Barang Jadi", "Target Qty", "Target Unit",
-                "Kode Item", "Nama Item", "Unit", "Qty", "Total Harga"
+                "Kode Barang Jadi", "Nama Barang Jadi", "Kode Produk", "Nama Produk", 
+                "Target Qty", "Target Unit", "Kode Item", "Nama Item", "Unit", "Qty", "Total Harga"
             ]
             for i, header in enumerate(rekap_headers):
                 cell = ws.cell(row=3, column=start_col_rekap + i, value=header)
@@ -325,18 +302,15 @@ def generate_excel_report(df_gabungan, df_indikator):
                 cell.fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
 
             current_row = 4
-            sub_grouped = group_data.groupby('Kode Barang Jadi', dropna=False)
+            # PENGELOMPOKKAN REKAP BERDASARKAN 4 PILAR INDUK
+            sub_grouped = group_data.groupby(['Kode Barang Jadi', 'Nama Barang Jadi', 'Kode Produk', 'Nama Produk'], dropna=False)
             
-            for kode_bj, sub_df in sub_grouped:
-                nama_bj_val = sub_df['Nama Barang Jadi'].iloc[0]
+            for (kbj, nbj, kp, np), sub_df in sub_grouped:
                 target_unit_val = sub_df['Target Unit'].iloc[0] if 'Target Unit' in sub_df.columns else ""
-                
-                # REVISI: Hardcode "GR" untuk semua gudang selain 500 dan 5000 MRT
                 display_target_unit = target_unit_val if is_500_5000 else "GR"
                 
                 if is_dyeing_lab:
                     target_qty_val = sub_df.drop_duplicates(subset=['Tx_ID'])['Qty Target Standar (GR)'].sum()
-                    # REVISI: Grouping hanya berdasarkan Kode dan Nama Item saja (mengabaikan Unit agar bisa dilebur)
                     item_grouped = sub_df.groupby(['Kode Item', 'Nama Item'], dropna=False).agg({
                         'Unit': 'first',
                         'Qty BB Standar (GR)': 'sum',
@@ -355,59 +329,68 @@ def generate_excel_report(df_gabungan, df_indikator):
                 start_merge_row = current_row
                 
                 for _, item_row in item_grouped.iterrows():
-                    # REVISI: Hardcode "GR" untuk semua gudang selain 500 dan 5000 MRT
                     display_item_unit = item_row['Unit'] if is_500_5000 else "GR"
                     
-                    ws.cell(row=current_row, column=start_col_rekap, value=kode_bj)
-                    ws.cell(row=current_row, column=start_col_rekap + 1, value=nama_bj_val)
-                    ws.cell(row=current_row, column=start_col_rekap + 2, value=target_qty_val)
-                    ws.cell(row=current_row, column=start_col_rekap + 3, value=display_target_unit)
-                    ws.cell(row=current_row, column=start_col_rekap + 4, value=item_row['Kode Item'])
-                    ws.cell(row=current_row, column=start_col_rekap + 5, value=item_row['Nama Item'])
-                    ws.cell(row=current_row, column=start_col_rekap + 6, value=display_item_unit)
-                    ws.cell(row=current_row, column=start_col_rekap + 7, value=item_row['Qty'])
-                    ws.cell(row=current_row, column=start_col_rekap + 8, value=item_row[kolom_total]) 
+                    ws.cell(row=current_row, column=start_col_rekap, value=kbj)
+                    ws.cell(row=current_row, column=start_col_rekap + 1, value=nbj)
+                    ws.cell(row=current_row, column=start_col_rekap + 2, value=kp)
+                    ws.cell(row=current_row, column=start_col_rekap + 3, value=np)
+                    ws.cell(row=current_row, column=start_col_rekap + 4, value=target_qty_val)
+                    ws.cell(row=current_row, column=start_col_rekap + 5, value=display_target_unit)
+                    ws.cell(row=current_row, column=start_col_rekap + 6, value=item_row['Kode Item'])
+                    ws.cell(row=current_row, column=start_col_rekap + 7, value=item_row['Nama Item'])
+                    ws.cell(row=current_row, column=start_col_rekap + 8, value=display_item_unit)
+                    ws.cell(row=current_row, column=start_col_rekap + 9, value=item_row['Qty'])
+                    ws.cell(row=current_row, column=start_col_rekap + 10, value=item_row[kolom_total]) 
                     current_row += 1
                     
                 if jumlah_item > 1:
                     end_merge_row = current_row - 1
-                    for col_offset in range(4): 
+                    # MERGE 6 KOLOM AWAL (Kode Barang Jadi hingga Target Unit)
+                    for col_offset in range(6): 
                         ws.merge_cells(start_row=start_merge_row, start_column=start_col_rekap + col_offset,
                                        end_row=end_merge_row, end_column=start_col_rekap + col_offset)
                         ws.cell(row=start_merge_row, column=start_col_rekap + col_offset).alignment = Alignment(vertical='center', horizontal='center')
 
-            target_u = group_data['Target Unit'].iloc[0] if not group_data.empty and 'Target Unit' in group_data.columns else ""
+            # MENAMPUNG DATA SUMMARY (DI-GROUPING PER KODE PRODUK & NAMA PRODUK DALAM 1 SHEET)
+            prod_grouped = group_data.groupby(['Kode Produk', 'Nama Produk'], dropna=False)
+            sheet_summary_rows = []
             
-            if is_dyeing_lab:
-                t_qty_sum = group_data.drop_duplicates(subset=['Tx_ID'])['Qty Target Standar (GR)'].sum()
-                q_gram_sum = t_qty_sum
-            else:
-                t_qty_sum = group_data.drop_duplicates(subset=['Tx_ID'])['Target Qty'].sum()
-                q_gram_sum = t_qty_sum
-            
-            if is_500_5000:
-                q_gram_sum = group_data['Qty'].sum()
-                satuan_target = target_u
-                satuan = group_data['Unit'].iloc[0] if not group_data.empty and 'Unit' in group_data.columns else ""
-            else:
-                satuan_target = "GR"
-                satuan = "GR"
+            for (kp, np), p_data in prod_grouped:
+                if is_dyeing_lab:
+                    t_qty_sum = p_data.drop_duplicates(subset=['Tx_ID'])['Qty Target Standar (GR)'].sum()
+                    q_gram_sum = t_qty_sum
+                    satuan_target = "GR"
+                    satuan = "GR"
+                else:
+                    t_qty_sum = p_data.drop_duplicates(subset=['Tx_ID'])['Target Qty'].sum()
+                    if is_500_5000:
+                        q_gram_sum = p_data['Qty'].sum()
+                        satuan_target = p_data['Target Unit'].iloc[0] if 'Target Unit' in p_data.columns else ""
+                        satuan = p_data['Unit'].iloc[0] if 'Unit' in p_data.columns else ""
+                    else:
+                        q_gram_sum = t_qty_sum
+                        satuan_target = "GR"
+                        satuan = "GR"
 
-            summary_dict[gudang_name].append({
-                'DIVISI': gudang_name,
-                'MERK': merk_display,
-                'SATUAN TARGET': satuan_target,
-                'QTY TARGET': t_qty_sum,
-                'SATUAN': satuan,
-                'QTY GRAM': q_gram_sum,
-                'Sheet_Link': final_sheet_name 
-            })
+                sheet_summary_rows.append({
+                    'DIVISI': gudang_name,
+                    'MERK': merk_display,
+                    'KODE PRODUK': str(kp) if str(kp).lower() != 'nan' else "",
+                    'NAMA PRODUK': str(np) if str(np).lower() != 'nan' else "",
+                    'SATUAN TARGET': satuan_target,
+                    'QTY TARGET': t_qty_sum,
+                    'SATUAN': satuan,
+                    'QTY GRAM': q_gram_sum,
+                    'Sheet_Link': final_sheet_name 
+                })
+            summary_dict[gudang_name].append(sheet_summary_rows)
             
-    # 4. PENULISAN SHEET SUMMARY MENYAMPING
-    summary_headers = ['DIVISI', 'MERK', 'SATUAN TARGET', 'QTY TARGET', 'SATUAN', 'QTY GRAM']
+    # 4. PENULISAN SHEET SUMMARY (DENGAN LOGIKA MERGE CELL UNTUK MULTI-PRODUK)
+    summary_headers = ['DIVISI', 'MERK', 'KODE PRODUK', 'NAMA PRODUK', 'SATUAN TARGET', 'QTY TARGET', 'SATUAN', 'QTY GRAM']
     current_start_col = 1
     
-    for gudang, rows in summary_dict.items():
+    for gudang, sheet_groups in summary_dict.items():
         cell_title = ws_summary.cell(row=1, column=current_start_col, value=f"REKAP - {gudang}")
         master_link = master_names_dict.get(gudang, "")
         if master_link:
@@ -419,17 +402,32 @@ def generate_excel_report(df_gabungan, df_indikator):
             c.font = Font(bold=True)
             c.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
             
-        for r_idx, row_dict in enumerate(rows, 3):
-            ws_summary.cell(row=r_idx, column=current_start_col, value=row_dict['DIVISI'])
-            
-            c_merk = ws_summary.cell(row=r_idx, column=current_start_col + 1, value=row_dict['MERK'])
-            c_merk.hyperlink = f"#'{row_dict['Sheet_Link']}'!A1"
-            c_merk.font = Font(color="0563C1", underline="single")
-            
-            ws_summary.cell(row=r_idx, column=current_start_col + 2, value=row_dict['SATUAN TARGET'])
-            ws_summary.cell(row=r_idx, column=current_start_col + 3, value=row_dict['QTY TARGET'])
-            ws_summary.cell(row=r_idx, column=current_start_col + 4, value=row_dict['SATUAN'])
-            ws_summary.cell(row=r_idx, column=current_start_col + 5, value=row_dict['QTY GRAM'])
+        current_row = 3
+        for sheet_rows in sheet_groups:
+            start_merge_row = current_row
+            for row_dict in sheet_rows:
+                ws_summary.cell(row=current_row, column=current_start_col, value=row_dict['DIVISI'])
+                
+                c_merk = ws_summary.cell(row=current_row, column=current_start_col + 1, value=row_dict['MERK'])
+                c_merk.hyperlink = f"#'{row_dict['Sheet_Link']}'!A1"
+                c_merk.font = Font(color="0563C1", underline="single")
+                
+                ws_summary.cell(row=current_row, column=current_start_col + 2, value=row_dict['KODE PRODUK'])
+                ws_summary.cell(row=current_row, column=current_start_col + 3, value=row_dict['NAMA PRODUK'])
+                ws_summary.cell(row=current_row, column=current_start_col + 4, value=row_dict['SATUAN TARGET'])
+                ws_summary.cell(row=current_row, column=current_start_col + 5, value=row_dict['QTY TARGET'])
+                ws_summary.cell(row=current_row, column=current_start_col + 6, value=row_dict['SATUAN'])
+                ws_summary.cell(row=current_row, column=current_start_col + 7, value=row_dict['QTY GRAM'])
+                
+                current_row += 1
+                
+            end_merge_row = current_row - 1
+            if end_merge_row > start_merge_row:
+                # Merge kolom Divisi & Merk jika ada >1 produk di 1 sheet
+                ws_summary.merge_cells(start_row=start_merge_row, start_column=current_start_col, end_row=end_merge_row, end_column=current_start_col)
+                ws_summary.merge_cells(start_row=start_merge_row, start_column=current_start_col + 1, end_row=end_merge_row, end_column=current_start_col + 1)
+                ws_summary.cell(row=start_merge_row, column=current_start_col).alignment = Alignment(vertical='center', horizontal='center')
+                ws_summary.cell(row=start_merge_row, column=current_start_col + 1).alignment = Alignment(vertical='center', horizontal='center')
             
         current_start_col += len(summary_headers) + 2 
         
@@ -437,7 +435,7 @@ def generate_excel_report(df_gabungan, df_indikator):
     return output.getvalue()
 
 # ==========================================
-# UI STREAMLIT: KOLOM UPLOAD
+# UI STREAMLIT
 # ==========================================
 st.markdown("<p style='text-align: center; color: #b2ebf2; margin-bottom: 30px;'>⚙️ SISTEM PENGELOLAAN DETAIL PRODUK DATA HASIL PRODUKSI</p>", unsafe_allow_html=True)
 
