@@ -70,7 +70,7 @@ custom_css = """
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
-st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN (UPDATE V6)</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN (UPDATE V7)</h1>", unsafe_allow_html=True)
 
 # ==========================================
 # FUNGSI BACKEND
@@ -94,15 +94,13 @@ def clean_single_file(file, file_idx):
     df = df.iloc[:-4]
     df = df.dropna(how='all')
     
-    if 'Kode' in df.columns:
-        df['Tx_ID'] = str(file_idx) + "_" + df['Kode'].ffill().astype(str)
+    # KEMBALI KE TX_ID ORIGINAL AGAR 500/5000 AMAN
+    ind_col = 'Kode Barang Jadi' if 'Kode Barang Jadi' in df.columns else ('Gudang' if 'Gudang' in df.columns else None)
+    if ind_col:
+        is_parent = df[ind_col].notna() & (df[ind_col].astype(str).str.strip() != '') & (df[ind_col].astype(str).str.lower() != 'nan')
+        df['Tx_ID'] = str(file_idx) + "_" + is_parent.cumsum().astype(str)
     else:
-        ind_col = 'Kode Barang Jadi' if 'Kode Barang Jadi' in df.columns else ('Gudang' if 'Gudang' in df.columns else None)
-        if ind_col:
-            is_parent = df[ind_col].notna() & (df[ind_col].astype(str).str.strip() != '') & (df[ind_col].astype(str).str.lower() != 'nan')
-            df['Tx_ID'] = str(file_idx) + "_" + is_parent.cumsum().astype(str)
-        else:
-            df['Tx_ID'] = f"{file_idx}_1"
+        df['Tx_ID'] = f"{file_idx}_1"
     
     if 'Kode Item' in df.columns:
         idx = df.columns.get_loc('Kode Item')
@@ -203,7 +201,6 @@ def generate_excel_report(df_gabungan, df_indikator):
     df_filtered['Sheet_Group'] = [x[0] for x in res]
     df_filtered['Merk_Group'] = [x[1] for x in res]
 
-    # MENCIPTAKAN KOLOM STANDAR HANYA SEMENTARA UNTUK MEMBANTU PERHITUNGAN
     if 'Target Unit' in df_filtered.columns and 'Target Qty' in df_filtered.columns:
         loc = df_filtered.columns.get_loc('Target Unit')
         idx = loc + 1 if isinstance(loc, int) else len(df_filtered.columns)
@@ -218,7 +215,7 @@ def generate_excel_report(df_gabungan, df_indikator):
     else:
         df_filtered['Qty BB Standar (GR)'] = df_filtered.get('Qty', 0)
 
-    # KONVERSI (x1000) KHUSUS DYEING & LAB
+    # KONVERSI KHUSUS DYEING & LAB & RND SAJA
     mask_dyeing_lab = df_filtered['Gudang'].astype(str).str.upper().str.contains('DYEING|LAB|RND', regex=True)
     mask_kg_target = df_filtered['Target Unit'].astype(str).str.upper() == 'KG'
     mask_kg_unit = df_filtered['Unit'].astype(str).str.upper() == 'KG'
@@ -238,12 +235,13 @@ def generate_excel_report(df_gabungan, df_indikator):
         g_upper = gudang_name.upper()
         
         is_500_5000 = "500" in g_upper or "5000" in g_upper
+        is_softcone = "SOFTCONE" in g_upper
         is_dyeing_lab = "DYEING" in g_upper or "LAB" in g_upper or "RND" in g_upper
 
         cols_to_drop = ['Sheet_Group', 'Merk_Group', 'Tx_ID']
         
-        # PERBAIKAN: KOLOM STANDAR (GR) DIHAPUS DI MASTER UNTUK 500, 5000, DAN SOFTCONE
-        if not is_dyeing_lab:
+        # MENGHAPUS KOLOM STANDAR (GR) DI MASTER UNTUK 500/5000 DAN SOFTCONE
+        if is_500_5000 or is_softcone:
             cols_to_drop.extend(['Qty Target Standar (GR)', 'Qty BB Standar (GR)'])
 
         master_sheet_name = re.sub(r'[\\/*?:\[\]]', '_', f"Master - {gudang_name}")[:31]
@@ -311,22 +309,32 @@ def generate_excel_report(df_gabungan, df_indikator):
                 target_unit_val = sub_df['Target Unit'].iloc[0] if 'Target Unit' in sub_df.columns else ""
                 display_target_unit = target_unit_val if is_500_5000 else "GR"
                 
-                # PERBAIKAN: AGREGASI TABEL REKAP (KHUSUS DYEING/LAB PAKAI GR, SISANYA PAKAI TARGET QTY BAWAAN)
-                if is_dyeing_lab:
-                    target_qty_val = sub_df.drop_duplicates(subset=['Tx_ID'])['Qty Target Standar (GR)'].sum()
-                    item_grouped = sub_df.groupby(['Kode Item', 'Nama Item'], dropna=False).agg({
-                        'Unit': 'first',
-                        'Qty BB Standar (GR)': 'sum',
-                        kolom_total: 'sum'
-                    }).reset_index()
-                    item_grouped.rename(columns={'Qty BB Standar (GR)': 'Qty'}, inplace=True)
-                else:
+                # PERHITUNGAN REKAP DETAIL SESUAI GUDANG
+                if is_500_5000:
+                    # 500/5000: Tarik Target Qty (dilindungi Tx_ID karena Parent-Child) dan Qty
                     target_qty_val = sub_df.drop_duplicates(subset=['Tx_ID'])['Target Qty'].sum()
                     item_grouped = sub_df.groupby(['Kode Item', 'Nama Item'], dropna=False).agg({
                         'Unit': 'first',
                         'Qty': 'sum',
                         kolom_total: 'sum'
                     }).reset_index()
+                elif is_softcone:
+                    # Softcone: Langsung Sum Target Qty dan Qty dari tabel Master
+                    target_qty_val = sub_df['Target Qty'].sum()
+                    item_grouped = sub_df.groupby(['Kode Item', 'Nama Item'], dropna=False).agg({
+                        'Unit': 'first',
+                        'Qty': 'sum',
+                        kolom_total: 'sum'
+                    }).reset_index()
+                else:
+                    # Dyeing & Lab: Langsung Sum kolom Standar (GR) dari tabel Master
+                    target_qty_val = sub_df['Qty Target Standar (GR)'].sum()
+                    item_grouped = sub_df.groupby(['Kode Item', 'Nama Item'], dropna=False).agg({
+                        'Unit': 'first',
+                        'Qty BB Standar (GR)': 'sum',
+                        kolom_total: 'sum'
+                    }).reset_index()
+                    item_grouped.rename(columns={'Qty BB Standar (GR)': 'Qty'}, inplace=True)
 
                 jumlah_item = len(item_grouped)
                 start_merge_row = current_row
@@ -358,22 +366,21 @@ def generate_excel_report(df_gabungan, df_indikator):
             sheet_summary_rows = []
             
             for (kp, np), p_data in prod_grouped:
-                # PERBAIKAN: AGREGASI SUMMARY (Pemisahan 3 Grup Tegas)
-                if is_dyeing_lab:
-                    # Dyeing & Lab: Murni mengambil dari Standar GR
-                    t_qty_sum = p_data.drop_duplicates(subset=['Tx_ID'])['Qty Target Standar (GR)'].sum()
-                    q_gram_sum = t_qty_sum
-                    satuan_target = "GR"
-                    satuan = "GR"
-                elif is_500_5000:
-                    # 500 & 5000: Murni mengambil bawaan dan Qty BB Aktual
+                # PERHITUNGAN SUMMARY SESUAI GUDANG
+                if is_500_5000:
                     t_qty_sum = p_data.drop_duplicates(subset=['Tx_ID'])['Target Qty'].sum()
                     q_gram_sum = p_data['Qty'].sum()
                     satuan_target = p_data['Target Unit'].iloc[0] if 'Target Unit' in p_data.columns else ""
                     satuan = p_data['Unit'].iloc[0] if 'Unit' in p_data.columns else ""
+                elif is_softcone:
+                    # Softcone: Mutlak langsung Sum dari Target Qty
+                    t_qty_sum = p_data['Target Qty'].sum()
+                    q_gram_sum = t_qty_sum
+                    satuan_target = "GR"
+                    satuan = "GR"
                 else:
-                    # Softcone: Murni mengambil bawaan untuk kedua kolomnya dengan satuan diubah GR
-                    t_qty_sum = p_data.drop_duplicates(subset=['Tx_ID'])['Target Qty'].sum()
+                    # Dyeing & Lab: Mutlak langsung Sum dari Qty Target Standar (GR)
+                    t_qty_sum = p_data['Qty Target Standar (GR)'].sum()
                     q_gram_sum = t_qty_sum
                     satuan_target = "GR"
                     satuan = "GR"
