@@ -71,7 +71,7 @@ custom_css = """
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
-st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN (UPDATE V10 - FORMATTED)</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN (UPDATE V11 - STYLING)</h1>", unsafe_allow_html=True)
 
 # ==========================================
 # FUNGSI BANTUAN (FORMATTING EXCEL)
@@ -92,16 +92,24 @@ def reset_no_column(df):
                  df_copy[col] = range(1, len(df_copy) + 1)
     return df_copy
 
-def apply_table_formatting_and_totals(ws, start_row, end_row, start_col, headers):
+def apply_table_formatting_and_totals(ws, start_row, end_row, start_col, headers, is_summary=False):
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    dark_blue_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    white_font_bold = Font(bold=True, color="FFFFFF")
+    black_font_bold = Font(bold=True)
     
     qty_headers = ["target qty", "qty", "qty target standar (gr)", "qty bb standar (gr)", "qty target", "qty gram"]
     currency_headers = ["harga", "total", "total harga"]
     
     total_row = end_row + 1
     if end_row >= start_row + 1:
-        ws.cell(row=total_row, column=start_col, value="TOTAL").font = Font(bold=True)
-        
+        cell_tot_label = ws.cell(row=total_row, column=start_col, value="TOTAL")
+        if not is_summary:
+            cell_tot_label.font = white_font_bold
+            cell_tot_label.fill = dark_blue_fill
+        else:
+            cell_tot_label.font = black_font_bold
+            
     for i, header in enumerate(headers):
         col_idx = start_col + i
         col_letter = get_column_letter(col_idx)
@@ -110,21 +118,31 @@ def apply_table_formatting_and_totals(ws, start_row, end_row, start_col, headers
         for r in range(start_row, total_row + 1 if end_row >= start_row + 1 else end_row + 1):
             cell = ws.cell(row=r, column=col_idx)
             cell.border = thin_border
-            # Terapkan format angka
-            if r <= end_row:
+            
+            # Terapkan format angka (hanya pada baris data)
+            if start_row < r <= end_row:
                 if header_lower in qty_headers and isinstance(cell.value, (int, float)):
                     cell.number_format = '#,##0.00'
                 elif header_lower in currency_headers and isinstance(cell.value, (int, float)):
                     cell.number_format = '"Rp" #,##0.00'
             
+            # Terapkan warna biru gelap pada baris Total (selain summary)
+            if r == total_row and not is_summary:
+                cell.fill = dark_blue_fill
+            
+        # Rumus SUBTOTAL di baris paling bawah
         if end_row >= start_row + 1 and (header_lower in qty_headers or header_lower in currency_headers):
             formula = f"=SUBTOTAL(9, {col_letter}{start_row + 1}:{col_letter}{end_row})"
-            cell = ws.cell(row=total_row, column=col_idx, value=formula)
-            cell.font = Font(bold=True)
+            cell_form = ws.cell(row=total_row, column=col_idx, value=formula)
+            if not is_summary:
+                cell_form.font = white_font_bold
+            else:
+                cell_form.font = black_font_bold
+                
             if header_lower in qty_headers:
-                cell.number_format = '#,##0.00'
+                cell_form.number_format = '#,##0.00'
             elif header_lower in currency_headers:
-                cell.number_format = '"Rp" #,##0.00'
+                cell_form.number_format = '"Rp" #,##0.00'
 
 def autofit_columns(ws):
     for col in ws.columns:
@@ -329,14 +347,16 @@ def generate_excel_report(df_gabungan, df_indikator):
         
         for c_idx, col_name in enumerate(gudang_export.columns, 1):
             cell = ws_master.cell(row=3, column=c_idx, value=col_name)
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+            cell.font = Font(bold=True, color="FFFFFF")
+            # WARNA HEADER BIRU GELAP (NON-SUMMARY)
+            cell.fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+            
         for r_idx, row in enumerate(dataframe_to_rows(gudang_export, index=False, header=False), 4):
             for c_idx, value in enumerate(row, 1):
                 ws_master.cell(row=r_idx, column=c_idx, value=value)
                 
         end_row_master = 3 + len(gudang_export)
-        apply_table_formatting_and_totals(ws_master, 3, end_row_master, 1, gudang_export.columns)
+        apply_table_formatting_and_totals(ws_master, 3, end_row_master, 1, gudang_export.columns, is_summary=False)
         autofit_columns(ws_master)
                 
         summary_dict[gudang_name] = []
@@ -367,10 +387,12 @@ def generate_excel_report(df_gabungan, df_indikator):
                 for c_idx, val in enumerate(r, 1):
                     ws.cell(row=r_idx, column=c_idx, value=val)
             for cell in ws[3]:
-                cell.font = Font(bold=True)
+                cell.font = Font(bold=True, color="FFFFFF")
+                # WARNA HEADER BIRU GELAP (NON-SUMMARY)
+                cell.fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
             
             end_row_child_main = 3 + len(group_export)
-            apply_table_formatting_and_totals(ws, 3, end_row_child_main, 1, group_export.columns)
+            apply_table_formatting_and_totals(ws, 3, end_row_child_main, 1, group_export.columns, is_summary=False)
                 
             max_col_master = ws.max_column
             start_col_rekap = max_col_master + 3
@@ -382,7 +404,8 @@ def generate_excel_report(df_gabungan, df_indikator):
             for i, header in enumerate(rekap_headers):
                 cell = ws.cell(row=3, column=start_col_rekap + i, value=header)
                 cell.font = Font(bold=True, color="FFFFFF")
-                cell.fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+                # WARNA HEADER BIRU GELAP (NON-SUMMARY)
+                cell.fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
 
             current_row = 4
             sub_grouped = group_data.groupby(['Kode Barang Jadi', 'Nama Barang Jadi', 'Kode Produk', 'Nama Produk'], dropna=False)
@@ -441,7 +464,7 @@ def generate_excel_report(df_gabungan, df_indikator):
                         ws.cell(row=start_merge_row, column=start_col_rekap + col_offset).alignment = Alignment(horizontal='left', vertical='top')
 
             end_row_rekap = current_row - 1
-            apply_table_formatting_and_totals(ws, 3, end_row_rekap, start_col_rekap, rekap_headers)
+            apply_table_formatting_and_totals(ws, 3, end_row_rekap, start_col_rekap, rekap_headers, is_summary=False)
             autofit_columns(ws)
 
             prod_grouped = group_data.groupby(['Kode Produk', 'Nama Produk'], dropna=False)
@@ -492,6 +515,7 @@ def generate_excel_report(df_gabungan, df_indikator):
         for i, h in enumerate(summary_headers):
             c = ws_summary.cell(row=2, column=current_start_col + i, value=h)
             c.font = Font(bold=True)
+            # SUMMARY TETAP MENGGUNAKAN WARNA BIRU MUDA BAWAAN (TIDAK GELAP)
             c.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
             
         current_row = 3
@@ -521,7 +545,8 @@ def generate_excel_report(df_gabungan, df_indikator):
                 ws_summary.cell(row=start_merge_row, column=current_start_col + 1).alignment = Alignment(horizontal='left', vertical='top')
             
         end_row_summary = current_row - 1
-        apply_table_formatting_and_totals(ws_summary, 2, end_row_summary, current_start_col, summary_headers)
+        # PANGGIL DENGAN is_summary=True AGAR TOTALNYA TIDAK BERWARNA BIRU GELAP
+        apply_table_formatting_and_totals(ws_summary, 2, end_row_summary, current_start_col, summary_headers, is_summary=True)
         
         current_start_col += len(summary_headers) + 2 
         
