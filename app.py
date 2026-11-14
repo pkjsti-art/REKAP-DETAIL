@@ -71,7 +71,7 @@ custom_css = """
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
-st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN (UPDATE V9)</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN (UPDATE V10 - FORMATTED)</h1>", unsafe_allow_html=True)
 
 # ==========================================
 # FUNGSI BANTUAN (FORMATTING EXCEL)
@@ -80,7 +80,6 @@ def reset_no_column(df):
     df_copy = df.copy()
     for col in df_copy.columns:
         if str(col).strip().lower() == 'no':
-            # Jika ada kolom Kode, penomoran urut berdasarkan perubahan nilai di kolom Kode
             if 'Kode' in df_copy.columns:
                 df_copy['Kode_Clean'] = df_copy['Kode'].ffill()
                 df_copy[col] = (df_copy['Kode_Clean'] != df_copy['Kode_Clean'].shift()).cumsum()
@@ -95,7 +94,9 @@ def reset_no_column(df):
 
 def apply_table_formatting_and_totals(ws, start_row, end_row, start_col, headers):
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
-    numeric_headers = ["target qty", "qty", "qty target standar (gr)", "qty bb standar (gr)", "harga", "total", "total harga", "qty target", "qty gram"]
+    
+    qty_headers = ["target qty", "qty", "qty target standar (gr)", "qty bb standar (gr)", "qty target", "qty gram"]
+    currency_headers = ["harga", "total", "total harga"]
     
     total_row = end_row + 1
     if end_row >= start_row + 1:
@@ -104,14 +105,26 @@ def apply_table_formatting_and_totals(ws, start_row, end_row, start_col, headers
     for i, header in enumerate(headers):
         col_idx = start_col + i
         col_letter = get_column_letter(col_idx)
+        header_lower = str(header).strip().lower()
         
         for r in range(start_row, total_row + 1 if end_row >= start_row + 1 else end_row + 1):
-            ws.cell(row=r, column=col_idx).border = thin_border
+            cell = ws.cell(row=r, column=col_idx)
+            cell.border = thin_border
+            # Terapkan format angka
+            if r <= end_row:
+                if header_lower in qty_headers and isinstance(cell.value, (int, float)):
+                    cell.number_format = '#,##0.00'
+                elif header_lower in currency_headers and isinstance(cell.value, (int, float)):
+                    cell.number_format = '"Rp" #,##0.00'
             
-        if end_row >= start_row + 1 and str(header).strip().lower() in numeric_headers:
+        if end_row >= start_row + 1 and (header_lower in qty_headers or header_lower in currency_headers):
             formula = f"=SUBTOTAL(9, {col_letter}{start_row + 1}:{col_letter}{end_row})"
             cell = ws.cell(row=total_row, column=col_idx, value=formula)
             cell.font = Font(bold=True)
+            if header_lower in qty_headers:
+                cell.number_format = '#,##0.00'
+            elif header_lower in currency_headers:
+                cell.number_format = '"Rp" #,##0.00'
 
 def autofit_columns(ws):
     for col in ws.columns:
@@ -307,7 +320,6 @@ def generate_excel_report(df_gabungan, df_indikator):
         master_idx += 1
         
         btn = ws_master.cell(row=1, column=1, value="⬅️ KEMBALI KE SUMMARY")
-        # HYPERLINK SMART RETURN - MENGARAH KE KOORDINAT SUMMARY TABEL GUDANG
         col_letter_summary = get_column_letter(current_start_col_summary)
         btn.hyperlink = f"#'Summary'!{col_letter_summary}1"
         btn.font = Font(color="0563C1", underline="single", bold=True)
