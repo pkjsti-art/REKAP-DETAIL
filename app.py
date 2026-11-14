@@ -4,7 +4,8 @@ import io
 import re
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 
 # ==========================================
 # UI/UX: INJEKSI TEMA DARK CYBER / FUTURISTIC
@@ -70,7 +71,63 @@ custom_css = """
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
-st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN (UPDATE V7)</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN (UPDATE V9)</h1>", unsafe_allow_html=True)
+
+# ==========================================
+# FUNGSI BANTUAN (FORMATTING EXCEL)
+# ==========================================
+def reset_no_column(df):
+    df_copy = df.copy()
+    for col in df_copy.columns:
+        if str(col).strip().lower() == 'no':
+            # Jika ada kolom Kode, penomoran urut berdasarkan perubahan nilai di kolom Kode
+            if 'Kode' in df_copy.columns:
+                df_copy['Kode_Clean'] = df_copy['Kode'].ffill()
+                df_copy[col] = (df_copy['Kode_Clean'] != df_copy['Kode_Clean'].shift()).cumsum()
+                df_copy.drop(columns=['Kode_Clean'], inplace=True)
+            elif 'Kode Barang Jadi' in df_copy.columns:
+                 df_copy['KBJ_Clean'] = df_copy['Kode Barang Jadi'].ffill()
+                 df_copy[col] = (df_copy['KBJ_Clean'] != df_copy['KBJ_Clean'].shift()).cumsum()
+                 df_copy.drop(columns=['KBJ_Clean'], inplace=True)
+            else:
+                 df_copy[col] = range(1, len(df_copy) + 1)
+    return df_copy
+
+def apply_table_formatting_and_totals(ws, start_row, end_row, start_col, headers):
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    numeric_headers = ["target qty", "qty", "qty target standar (gr)", "qty bb standar (gr)", "harga", "total", "total harga", "qty target", "qty gram"]
+    
+    total_row = end_row + 1
+    if end_row >= start_row + 1:
+        ws.cell(row=total_row, column=start_col, value="TOTAL").font = Font(bold=True)
+        
+    for i, header in enumerate(headers):
+        col_idx = start_col + i
+        col_letter = get_column_letter(col_idx)
+        
+        for r in range(start_row, total_row + 1 if end_row >= start_row + 1 else end_row + 1):
+            ws.cell(row=r, column=col_idx).border = thin_border
+            
+        if end_row >= start_row + 1 and str(header).strip().lower() in numeric_headers:
+            formula = f"=SUBTOTAL(9, {col_letter}{start_row + 1}:{col_letter}{end_row})"
+            cell = ws.cell(row=total_row, column=col_idx, value=formula)
+            cell.font = Font(bold=True)
+
+def autofit_columns(ws):
+    for col in ws.columns:
+        max_length = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            try:
+                if cell.value:
+                    lines = str(cell.value).split('\n')
+                    for line in lines:
+                        if len(line) > max_length:
+                            max_length = len(line)
+            except:
+                pass
+        adjusted_width = (max_length + 2)
+        ws.column_dimensions[col_letter].width = min(adjusted_width, 55)
 
 # ==========================================
 # FUNGSI BACKEND
@@ -94,7 +151,6 @@ def clean_single_file(file, file_idx):
     df = df.iloc[:-4]
     df = df.dropna(how='all')
     
-    # KEMBALI KE TX_ID ORIGINAL AGAR 500/5000 AMAN
     ind_col = 'Kode Barang Jadi' if 'Kode Barang Jadi' in df.columns else ('Gudang' if 'Gudang' in df.columns else None)
     if ind_col:
         is_parent = df[ind_col].notna() & (df[ind_col].astype(str).str.strip() != '') & (df[ind_col].astype(str).str.lower() != 'nan')
@@ -215,7 +271,6 @@ def generate_excel_report(df_gabungan, df_indikator):
     else:
         df_filtered['Qty BB Standar (GR)'] = df_filtered.get('Qty', 0)
 
-    # KONVERSI KHUSUS DYEING & LAB & RND SAJA
     mask_dyeing_lab = df_filtered['Gudang'].astype(str).str.upper().str.contains('DYEING|LAB|RND', regex=True)
     mask_kg_target = df_filtered['Target Unit'].astype(str).str.upper() == 'KG'
     mask_kg_unit = df_filtered['Unit'].astype(str).str.upper() == 'KG'
@@ -229,6 +284,9 @@ def generate_excel_report(df_gabungan, df_indikator):
     summary_dict = {}
     master_names_dict = {}
     kolom_total = 'Total Harga' if 'Total Harga' in df_filtered.columns else 'Total'
+    
+    summary_headers = ['DIVISI', 'MERK', 'KODE PRODUK', 'NAMA PRODUK', 'SATUAN TARGET', 'QTY TARGET', 'SATUAN', 'QTY GRAM']
+    current_start_col_summary = 1
 
     for gudang, gudang_df in df_filtered.groupby('Gudang', dropna=False):
         gudang_name = str(gudang)
@@ -240,20 +298,23 @@ def generate_excel_report(df_gabungan, df_indikator):
 
         cols_to_drop = ['Sheet_Group', 'Merk_Group', 'Tx_ID']
         
-        # MENGHAPUS KOLOM STANDAR (GR) DI MASTER UNTUK 500/5000 DAN SOFTCONE
         if is_500_5000 or is_softcone:
             cols_to_drop.extend(['Qty Target Standar (GR)', 'Qty BB Standar (GR)'])
 
-        master_sheet_name = re.sub(r'[\\/*?:\[\]]', '_', f"Master - {gudang_name}")[:31]
+        master_sheet_name = re.sub(r'[\/*?:\[\]]', '_', f"Master - {gudang_name}")[:31]
         ws_master = wb.create_sheet(title=master_sheet_name, index=master_idx)
         master_names_dict[gudang_name] = master_sheet_name 
         master_idx += 1
         
         btn = ws_master.cell(row=1, column=1, value="⬅️ KEMBALI KE SUMMARY")
-        btn.hyperlink = "#'Summary'!A1"
+        # HYPERLINK SMART RETURN - MENGARAH KE KOORDINAT SUMMARY TABEL GUDANG
+        col_letter_summary = get_column_letter(current_start_col_summary)
+        btn.hyperlink = f"#'Summary'!{col_letter_summary}1"
         btn.font = Font(color="0563C1", underline="single", bold=True)
         
         gudang_export = gudang_df.drop(columns=cols_to_drop, errors='ignore')
+        gudang_export = reset_no_column(gudang_export)
+        
         for c_idx, col_name in enumerate(gudang_export.columns, 1):
             cell = ws_master.cell(row=3, column=c_idx, value=col_name)
             cell.font = Font(bold=True)
@@ -262,6 +323,10 @@ def generate_excel_report(df_gabungan, df_indikator):
             for c_idx, value in enumerate(row, 1):
                 ws_master.cell(row=r_idx, column=c_idx, value=value)
                 
+        end_row_master = 3 + len(gudang_export)
+        apply_table_formatting_and_totals(ws_master, 3, end_row_master, 1, gudang_export.columns)
+        autofit_columns(ws_master)
+                
         summary_dict[gudang_name] = []
         grouped = gudang_df.groupby('Sheet_Group', dropna=False)
             
@@ -269,7 +334,7 @@ def generate_excel_report(df_gabungan, df_indikator):
             sheet_name_raw = str(keys)
             merk_display = group_data['Merk_Group'].iloc[0] if not group_data.empty else sheet_name_raw
             
-            sheet_name_clean = re.sub(r'[\\/*?:\[\]]', '-', sheet_name_raw)[:31]
+            sheet_name_clean = re.sub(r'[\/*?:\[\]]', '-', sheet_name_raw)[:31]
             base_sheet_name = sheet_name_clean
             counter = 1
             while base_sheet_name in wb.sheetnames:
@@ -280,15 +345,20 @@ def generate_excel_report(df_gabungan, df_indikator):
             ws = wb.create_sheet(title=final_sheet_name)
             
             btn = ws.cell(row=1, column=1, value="⬅️ KEMBALI KE SUMMARY")
-            btn.hyperlink = "#'Summary'!A1"
+            btn.hyperlink = f"#'Summary'!{col_letter_summary}1"
             btn.font = Font(color="0563C1", underline="single", bold=True)
             
             group_export = group_data.drop(columns=cols_to_drop, errors='ignore')
+            group_export = reset_no_column(group_export)
+            
             for r_idx, r in enumerate(dataframe_to_rows(group_export, index=False, header=True), 3):
                 for c_idx, val in enumerate(r, 1):
                     ws.cell(row=r_idx, column=c_idx, value=val)
             for cell in ws[3]:
                 cell.font = Font(bold=True)
+            
+            end_row_child_main = 3 + len(group_export)
+            apply_table_formatting_and_totals(ws, 3, end_row_child_main, 1, group_export.columns)
                 
             max_col_master = ws.max_column
             start_col_rekap = max_col_master + 3
@@ -309,9 +379,7 @@ def generate_excel_report(df_gabungan, df_indikator):
                 target_unit_val = sub_df['Target Unit'].iloc[0] if 'Target Unit' in sub_df.columns else ""
                 display_target_unit = target_unit_val if is_500_5000 else "GR"
                 
-                # PERHITUNGAN REKAP DETAIL SESUAI GUDANG
                 if is_500_5000:
-                    # 500/5000: Tarik Target Qty (dilindungi Tx_ID karena Parent-Child) dan Qty
                     target_qty_val = sub_df.drop_duplicates(subset=['Tx_ID'])['Target Qty'].sum()
                     item_grouped = sub_df.groupby(['Kode Item', 'Nama Item'], dropna=False).agg({
                         'Unit': 'first',
@@ -319,7 +387,6 @@ def generate_excel_report(df_gabungan, df_indikator):
                         kolom_total: 'sum'
                     }).reset_index()
                 elif is_softcone:
-                    # Softcone: Langsung Sum Target Qty dan Qty dari tabel Master
                     target_qty_val = sub_df['Target Qty'].sum()
                     item_grouped = sub_df.groupby(['Kode Item', 'Nama Item'], dropna=False).agg({
                         'Unit': 'first',
@@ -327,7 +394,6 @@ def generate_excel_report(df_gabungan, df_indikator):
                         kolom_total: 'sum'
                     }).reset_index()
                 else:
-                    # Dyeing & Lab: Langsung Sum kolom Standar (GR) dari tabel Master
                     target_qty_val = sub_df['Qty Target Standar (GR)'].sum()
                     item_grouped = sub_df.groupby(['Kode Item', 'Nama Item'], dropna=False).agg({
                         'Unit': 'first',
@@ -362,24 +428,25 @@ def generate_excel_report(df_gabungan, df_indikator):
                                        end_row=end_merge_row, end_column=start_col_rekap + col_offset)
                         ws.cell(row=start_merge_row, column=start_col_rekap + col_offset).alignment = Alignment(horizontal='left', vertical='top')
 
+            end_row_rekap = current_row - 1
+            apply_table_formatting_and_totals(ws, 3, end_row_rekap, start_col_rekap, rekap_headers)
+            autofit_columns(ws)
+
             prod_grouped = group_data.groupby(['Kode Produk', 'Nama Produk'], dropna=False)
             sheet_summary_rows = []
             
             for (kp, np), p_data in prod_grouped:
-                # PERHITUNGAN SUMMARY SESUAI GUDANG
                 if is_500_5000:
                     t_qty_sum = p_data.drop_duplicates(subset=['Tx_ID'])['Target Qty'].sum()
                     q_gram_sum = p_data['Qty'].sum()
                     satuan_target = p_data['Target Unit'].iloc[0] if 'Target Unit' in p_data.columns else ""
                     satuan = p_data['Unit'].iloc[0] if 'Unit' in p_data.columns else ""
                 elif is_softcone:
-                    # Softcone: Mutlak langsung Sum dari Target Qty
                     t_qty_sum = p_data['Target Qty'].sum()
                     q_gram_sum = t_qty_sum
                     satuan_target = "GR"
                     satuan = "GR"
                 else:
-                    # Dyeing & Lab: Mutlak langsung Sum dari Qty Target Standar (GR)
                     t_qty_sum = p_data['Qty Target Standar (GR)'].sum()
                     q_gram_sum = t_qty_sum
                     satuan_target = "GR"
@@ -398,8 +465,9 @@ def generate_excel_report(df_gabungan, df_indikator):
                 })
             summary_dict[gudang_name].append(sheet_summary_rows)
             
+        current_start_col_summary += len(summary_headers) + 2 
+            
     # 4. PENULISAN SHEET SUMMARY
-    summary_headers = ['DIVISI', 'MERK', 'KODE PRODUK', 'NAMA PRODUK', 'SATUAN TARGET', 'QTY TARGET', 'SATUAN', 'QTY GRAM']
     current_start_col = 1
     
     for gudang, sheet_groups in summary_dict.items():
@@ -440,8 +508,12 @@ def generate_excel_report(df_gabungan, df_indikator):
                 ws_summary.cell(row=start_merge_row, column=current_start_col).alignment = Alignment(horizontal='left', vertical='top')
                 ws_summary.cell(row=start_merge_row, column=current_start_col + 1).alignment = Alignment(horizontal='left', vertical='top')
             
+        end_row_summary = current_row - 1
+        apply_table_formatting_and_totals(ws_summary, 2, end_row_summary, current_start_col, summary_headers)
+        
         current_start_col += len(summary_headers) + 2 
         
+    autofit_columns(ws_summary)
     wb.save(output)
     return output.getvalue()
 
