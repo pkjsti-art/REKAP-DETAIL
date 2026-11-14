@@ -2,10 +2,21 @@ import streamlit as st
 import pandas as pd
 import io
 import re
+import os
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+
+# ==========================================
+# AUTO CONFIG THEME (MEMAKSA DARK MODE NATIVE)
+# ==========================================
+st_dir = ".streamlit"
+os.makedirs(st_dir, exist_ok=True) # Perbaikan error [WinError 183]
+config_path = os.path.join(st_dir, "config.toml")
+if not os.path.exists(config_path):
+    with open(config_path, "w") as f:
+        f.write("[theme]\nbase='dark'\nprimaryColor='#00f3ff'\nbackgroundColor='#040814'\nsecondaryBackgroundColor='#0a1931'\ntextColor='#e0f7fa'\n")
 
 # ==========================================
 # UI/UX: INJEKSI TEMA DARK CYBER / FUTURISTIC
@@ -14,12 +25,15 @@ st.set_page_config(page_title="Sistem Rekap Detail", layout="wide", initial_side
 
 custom_css = """
 <style>
-    .stApp {
+    /* Global Background & Base */
+    .stApp, .stApp > header {
         background-color: #040814 !important;
-        background-image: radial-gradient(circle at 50% 0%, #0a1931 0%, #040814 70%);
+        background-image: radial-gradient(circle at 50% 0%, #0a1931 0%, #040814 70%) !important;
         color: #e0f7fa !important;
         font-family: 'Courier New', Courier, monospace;
     }
+    
+    /* Typography */
     h1, h2, h3, h4, h5, h6 {
         color: #00f3ff !important;
         text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
@@ -27,51 +41,82 @@ custom_css = """
         text-transform: uppercase;
         letter-spacing: 2px;
     }
+    
+    p, span, div, label {
+        color: #e0f7fa !important;
+    }
+    label {
+        color: #00f3ff !important; 
+        font-weight: 600 !important;
+    }
+
+    /* =========================================
+       NUKLIR CSS: HANCURKAN BACKGROUND PUTIH
+       ========================================= */
+    /* Target SEMUA elemen di dalam kotak upload */
+    div[data-testid="stFileUploader"] * {
+        background-color: transparent !important;
+    }
+    
+    /* Area Dropzone */
     div[data-testid="stFileUploadDropzone"] {
-        background-color: rgba(4, 12, 32, 0.7) !important;
+        background-color: rgba(10, 25, 49, 0.8) !important;
         border: 2px dashed #00f3ff !important;
         box-shadow: 0 0 15px rgba(0, 243, 255, 0.2);
-        border-radius: 10px;
-        transition: all 0.3s ease;
+        border-radius: 10px !important;
+        padding: 20px !important;
     }
-    div[data-testid="stFileUploadDropzone"]:hover {
-        border-color: #00ffff !important;
-        box-shadow: 0 0 25px rgba(0, 255, 255, 0.6);
-        background-color: rgba(0, 243, 255, 0.05) !important;
+    
+    /* Kotak File yang ter-upload */
+    div[data-testid="stUploadedFile"] {
+        background-color: rgba(17, 34, 64, 0.9) !important;
+        border: 1px solid #00f3ff !important;
+        border-radius: 5px !important;
+        margin-top: 5px !important;
     }
-    .st-emotion-cache-1gblk4, .st-emotion-cache-1wivap2, .st-emotion-cache-1jspxgj {
-        color: #00f3ff !important;
+    
+    /* Paksa ikon dan teks di dalam kotak file jadi terang */
+    div[data-testid="stUploadedFile"] * {
+        color: #e0f7fa !important;
+        fill: #e0f7fa !important; 
     }
-    div[data-testid="stButton"] > button {
-        background-color: transparent !important;
+
+    /* Notifikasi Loading / Alert */
+    div[data-testid="stAlert"] {
+        background-color: rgba(10, 25, 49, 0.9) !important;
+        border: 1px solid #00f3ff !important;
+        border-left: 5px solid #00f3ff !important;
+        box-shadow: 0 0 10px rgba(0, 243, 255, 0.1);
+    }
+    div[data-testid="stAlert"] * {
+        color: #e0f7fa !important;
+    }
+
+    /* Tombol */
+    div[data-testid="stButton"] > button,
+    div[data-testid="stFileUploadDropzone"] button {
+        background-color: #040814 !important;
         color: #00f3ff !important;
         border: 1px solid #00f3ff !important;
         box-shadow: 0 0 8px rgba(0, 243, 255, 0.4), inset 0 0 5px rgba(0, 243, 255, 0.2);
         border-radius: 4px;
         font-weight: bold;
-        letter-spacing: 1px;
         text-transform: uppercase;
-        transition: all 0.3s ease;
         padding: 0.5rem 1rem;
     }
-    div[data-testid="stButton"] > button:hover {
+    div[data-testid="stButton"] > button:hover,
+    div[data-testid="stFileUploadDropzone"] button:hover {
         background-color: #00f3ff !important;
         color: #040814 !important;
-        box-shadow: 0 0 20px rgba(0, 243, 255, 0.8);
+        box-shadow: 0 0 20px rgba(0, 243, 255, 0.8) !important;
     }
-    div[data-testid="stAlert"] {
-        background-color: rgba(0, 243, 255, 0.05) !important;
-        border: 1px solid #00f3ff !important;
-        border-left: 5px solid #00f3ff !important;
-        color: #e0f7fa !important;
-        box-shadow: 0 0 10px rgba(0, 243, 255, 0.1);
+    div[data-testid="stFileUploadDropzone"] button * {
+        color: inherit !important;
     }
-    .stMarkdown p { color: #b2ebf2; }
-    label { color: #00f3ff !important; font-weight: 600 !important; }
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
-st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN (UPDATE V13)</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; border-bottom: 1px solid #00f3ff; padding-bottom: 15px; margin-bottom: 30px;'>⚙️ SISTEM REKAP DETAIL LAPORAN BULANAN (UPDATE V18)</h1>", unsafe_allow_html=True)
 
 # ==========================================
 # FUNGSI BANTUAN (FORMATTING EXCEL)
@@ -121,7 +166,6 @@ def apply_table_formatting_and_totals(ws, start_row, end_row, start_col, headers
                 elif header_lower in currency_headers and isinstance(cell.value, (int, float)):
                     cell.number_format = '"Rp" #,##0.00'
             
-            # Terapkan warna biru gelap pada baris Total di SEMUA sheet termasuk summary
             if r == total_row:
                 cell.fill = dark_blue_fill
             
@@ -169,13 +213,16 @@ def parse_number(val):
     except ValueError: return 0.0
 
 def clean_single_file(file, file_idx):
-    df = pd.read_excel(file, skiprows=4)
+    custom_na = ['', '#N/A', '#N/A N/A', '#NA', '-NaN', '-nan', '<NA>', 'N/A', 'NULL', 'NaN', 'n/a', 'nan', 'null']
+    df = pd.read_excel(file, skiprows=4, keep_default_na=False, na_values=custom_na)
+    
     df = df.iloc[:-4]
+    df = df.replace(r'^\s*$', None, regex=True)
     df = df.dropna(how='all')
     
     ind_col = 'Kode Barang Jadi' if 'Kode Barang Jadi' in df.columns else ('Gudang' if 'Gudang' in df.columns else None)
     if ind_col:
-        is_parent = df[ind_col].notna() & (df[ind_col].astype(str).str.strip() != '') & (df[ind_col].astype(str).str.lower() != 'nan')
+        is_parent = df[ind_col].notna() & (df[ind_col].astype(str).str.strip() != '') & (df[ind_col].astype(str).str.lower() != 'nan') & (df[ind_col].astype(str).str.lower() != 'none')
         df['Tx_ID'] = str(file_idx) + "_" + is_parent.cumsum().astype(str)
     else:
         df['Tx_ID'] = f"{file_idx}_1"
@@ -202,7 +249,7 @@ def get_sheet_group_and_merk(r, df_ind):
     gudang = str(r.get('Gudang', '')).upper()
     nama_bj = str(r.get('Nama Barang Jadi', ''))
     kode_prod = str(r.get('Kode Produk', '')).strip()
-    if kode_prod.lower() == 'nan': kode_prod = ""
+    if kode_prod.lower() in ['nan', 'none']: kode_prod = ""
     target_unit_raw = str(r.get('Target Unit', '')).upper().strip()
     
     is_500_5000 = "500" in gudang or "5000" in gudang
@@ -480,8 +527,8 @@ def generate_excel_report(df_gabungan, df_indikator):
                 sheet_summary_rows.append({
                     'DIVISI': gudang_name,
                     'MERK': merk_display,
-                    'KODE PRODUK': str(kp) if str(kp).lower() != 'nan' else "",
-                    'NAMA PRODUK': str(np) if str(np).lower() != 'nan' else "",
+                    'KODE PRODUK': str(kp) if str(kp).lower() not in ['nan', 'none'] else "",
+                    'NAMA PRODUK': str(np) if str(np).lower() not in ['nan', 'none'] else "",
                     'SATUAN TARGET': satuan_target,
                     'QTY TARGET': t_qty_sum,
                     'SATUAN': satuan,
@@ -505,7 +552,6 @@ def generate_excel_report(df_gabungan, df_indikator):
         for i, h in enumerate(summary_headers):
             c = ws_summary.cell(row=2, column=current_start_col + i, value=h)
             c.font = Font(bold=True, color="FFFFFF")
-            # SUMMARY SEKARANG JUGA MENGGUNAKAN BIRU GELAP
             c.fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
             
         current_row = 3
@@ -535,7 +581,6 @@ def generate_excel_report(df_gabungan, df_indikator):
                 ws_summary.cell(row=start_merge_row, column=current_start_col + 1).alignment = Alignment(horizontal='left', vertical='top')
             
         end_row_summary = current_row - 1
-        # PENERAPAN FORMATTING TANPA PENGECUALIAN (is_summary DIHAPUS)
         apply_table_formatting_and_totals(ws_summary, 2, end_row_summary, current_start_col, summary_headers)
         
         current_start_col += len(summary_headers) + 2 
